@@ -4,7 +4,7 @@ import { useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 
 
-import { getFresnelMat } from '../../../common/getFresnelMat'; 
+import { getFresnelMat } from '../../common/getFresnelMat'; 
 
 const EARTH_RADIUS_KM = 6371;
 const detail = 12; 
