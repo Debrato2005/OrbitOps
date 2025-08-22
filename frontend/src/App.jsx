@@ -7,12 +7,13 @@ import { Starfield } from './components/earthRender/starField';
 function App() {
   return (
     <div style={{ height: '100vh', width: '100vw', background: 'black' }}>
-      <Canvas 
-        camera={{ 
-          fov: 75, 
+      <Canvas
+        camera={{
+          fov: 75,
           position: [0, 0, 15000],
-          
-          near: 0.1,
+
+          near: 10, // Changed from 0.1
+
           far: 100000 // increase the far plane to see our distant objects
         }}
       >
@@ -25,10 +26,10 @@ function App() {
         <Earth />
 
         {/* Controls */}
-        <OrbitControls 
-            minDistance={7000} 
-            maxDistance={50000} // Increased max distance
-            enablePan={false}
+        <OrbitControls
+          minDistance={7000}
+          maxDistance={50000} // Increased max distance
+          enablePan={false}
         />
       </Canvas>
     </div>

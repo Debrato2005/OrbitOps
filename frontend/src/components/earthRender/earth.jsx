@@ -48,14 +48,15 @@ export function Earth() {
         />
       </mesh>
 
-      {/* City Lights Mesh */}
-      <mesh>
+            {/* City Lights Mesh */}
+      <mesh scale={[1.001, 1.001, 1.001]}> 
         <icosahedronGeometry args={[EARTH_RADIUS_KM, detail]} />
         <meshBasicMaterial 
           map={lightsMap} 
           blending={THREE.AdditiveBlending} 
         />
       </mesh>
+
 
       {/* Clouds Mesh */}
       <mesh ref={cloudsRef} scale={[1.003, 1.003, 1.003]}>
@@ -64,8 +65,9 @@ export function Earth() {
           map={cloudsMap}
           transparent={true}
           opacity={0.8}
-          blending={THREE.AdditiveBlending}
+          blending={THREE.NormalBlending} 
           alphaMap={cloudsAlphaMap}
+          depthWrite={false} 
         />
       </mesh>
 
