@@ -3,7 +3,8 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { Earth } from './components/earthRender/earth';
 import { Starfield } from './components/earthRender/starField';
-
+// we have to render the earth somewhere else and we need to make a landing page.
+// and also get better image becuase the image quality is geniunely horrible rn
 function App() {
   return (
     <div style={{ height: '100vh', width: '100vw', background: 'black' }}>

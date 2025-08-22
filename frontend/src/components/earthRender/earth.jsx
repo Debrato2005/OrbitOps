@@ -44,7 +44,7 @@ export function Earth() {
           map={dayMap}
           specularMap={specularMap}
           bumpMap={bumpMap}
-          bumpScale={25} // Adjusted for our larger radius
+          bumpScale={25} // Adjusted for  larger radius
         />
       </mesh>
 
