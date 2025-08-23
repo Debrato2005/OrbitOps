@@ -25,3 +25,6 @@ dist-ssr
 
 frontend/node_modules
 frontend/package-lock.json
+
+orbit_backend/node_modules
+orbit_backend/package-lock.json
