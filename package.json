@@ -16,5 +16,11 @@
   "bugs": {
     "url": "https://github.com/shakthirohanr/OrbitOps/issues"
   },
-  "homepage": "https://github.com/shakthirohanr/OrbitOps#readme"
+  "homepage": "https://github.com/shakthirohanr/OrbitOps#readme",
+  "dependencies": {
+    "dotenv": "^17.2.1",
+    "ootk": "^5.1.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  }
 }
