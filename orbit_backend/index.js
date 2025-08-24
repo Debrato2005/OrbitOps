@@ -5,6 +5,8 @@ const satellite = require('satellite.js');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const { findConjunctions } = require('./conjunctions');
+
 
 let fetchFunc;
 if (typeof fetch === 'function') {
@@ -47,27 +49,27 @@ function loadSnapshot() {
 loadSnapshot();
 
 // Helper: fetch TLE from Celestrak gp.php (per-NORAD call)
-async function fetchTLE(noradId) {
-  const key = String(noradId);
-  if (tleCache.has(key)) return tleCache.get(key);
+async function fetchTLE(norad) {
+  const url = `https://celestrak.org/NORAD/elements/gp.php?CATNR=${norad}&FORMAT=TLE`;
+  const res = await fetch(url);
+  const text = (await res.text()).trim();
 
-  const url = `https://celestrak.org/NORAD/elements/gp.php?CATNR=${encodeURIComponent(noradId)}&FORMAT=TLE`;
-  const r = await fetchFunc(url, { headers: { 'User-Agent': 'orbital-demo/1.0' }});
-  if (!r.ok) throw new Error(`TLE fetch failed ${r.status} ${r.statusText}`);
-  const txt = await r.text();
-  const lines = txt.trim().split('\n').map(l => l.trim()).filter(Boolean);
-  if (lines.length < 3) throw new Error('Invalid TLE response (expected name + 2 lines)');
-
-  const name = lines[0];
-  const line1 = lines[1];
-  const line2 = lines[2];
-  if (!line1.startsWith('1 ') || !line2.startsWith('2 ')) {
-    throw new Error('Malformed TLE lines returned');
+  if (text.startsWith('No GP data')) {
+    throw new Error(`No TLE data found for NORAD ${norad}`);
   }
-  const payload = { name, line1, line2, fetchedAt: new Date().toISOString() };
-  tleCache.set(key, payload);
-  return payload;
+
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  if (lines.length === 2) {
+    // No name provided, just line1 and line2
+    return { name: `NORAD ${norad}`, line1: lines[0], line2: lines[1] };
+  } else if (lines.length === 3) {
+    return { name: lines[0], line1: lines[1], line2: lines[2] };
+  } else {
+    throw new Error(`Unexpected TLE format for NORAD ${norad}: ${text}`);
+  }
 }
+
 
 // Helper: propagate a TLE into positions (ECI km + velocities km/s)
 function propagateTLEtoPositions(line1, line2, startIso, durationS = 3600, stepS = 60) {
@@ -90,6 +92,32 @@ function propagateTLEtoPositions(line1, line2, startIso, durationS = 3600, stepS
   }
   return out;
 }
+// --- Math helpers for conjunction search ---
+function distKm(a, b) {
+  const dx = a[0]-b[0], dy = a[1]-b[1], dz = a[2]-b[2];
+  return Math.sqrt(dx*dx + dy*dy + dz*dz);
+}
+
+function lerpState(p0, p1, alpha) {
+  return [
+    p0[0] + (p1[0]-p0[0]) * alpha,
+    p0[1] + (p1[1]-p1[1]) * alpha,
+    p0[2] + (p1[2]-p0[2]) * alpha,
+  ];
+}
+
+function refineMinBetweenSamples(r0a, r1a, r0b, r1b, refineSamples = 20) {
+  let best = { alpha: 0, dKm: distKm(r0a, r0b) };
+  for (let k = 1; k <= refineSamples; k++) {
+    const a = k / refineSamples;
+    const ra = lerpState(r0a, r1a, a);
+    const rb = lerpState(r0b, r1b, a);
+    const d = distKm(ra, rb);
+    if (d < best.dKm) best = { alpha: a, dKm: d };
+  }
+  return best;
+}
+
 
 /* === GET /api/tle/:noradId  ===
    Returns TLE lines and metadata (cached) */
@@ -176,4 +204,39 @@ app.post('/api/_reload_snapshot', (req, res) => {
   }
 });
 
+/* === GET /api/conjunctions/:noradId ===
+   Check target satellite against snapshot objects */
+app.get('/api/conjunctions/:noradId', async (req, res) => {
+  try {
+    if (!demoSnapshot) {
+      return res.json({ events: [], meta: { msg: 'no snapshot loaded' } });
+    }
+
+    const norad = req.params.noradId;
+    if (!/^\d+$/.test(norad)) {
+      return res.status(400).json({ error: 'noradId must be numeric' });
+    }
+
+    // Fetch TLE for the target satellite
+    const tle = await fetchTLE(norad);
+    const target = { name: tle.name, line1: tle.line1, line2: tle.line2, norad };
+
+    // **Filter snapshot to exclude the target itself**
+    const others = demoSnapshot.filter(o => String(o.norad) !== norad);
+
+    // Find conjunctions comparing target against others
+    const events = findConjunctions(target, others, {
+      durationS: 3600 * 6, // 6 hours
+      stepS: 60,
+      thresholdKm: 10
+    });
+
+    res.json({ target: tle.name, events, checked: others.length });
+  } catch (err) {
+    console.error('/api/conjunctions error', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+
