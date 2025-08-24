@@ -28,3 +28,6 @@ frontend/package-lock.json
 
 orbit_backend/node_modules
 orbit_backend/package-lock.json
+
+backend/node_modules
+backend/package-lock.json
