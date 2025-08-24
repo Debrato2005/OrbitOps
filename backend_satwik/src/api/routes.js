@@ -1,8 +1,10 @@
 // src/api/routes.js
 
 import { Router } from 'express';
+import { spawn } from 'child_process';
 
 const router = Router();
+const log = (message) => console.log(`[${new Date().toISOString()}] ${message}`); // FIX: Added missing log function
 const API_BASE_URL = 'https://api.keeptrack.space/v2';
 
 /**
@@ -15,7 +17,6 @@ async function fetchFromKeepTrack(endpoint) {
     try {
         const response = await fetch(`${API_BASE_URL}${endpoint}`);
         if (!response.ok) {
-            // Log the error for debugging on the server
             const errorBody = await response.text();
             console.error(`KeepTrack API Error (${response.status}): ${errorBody}`);
             throw new Error(`Failed to fetch data from KeepTrack API. Status: ${response.status}`);
@@ -23,25 +24,27 @@ async function fetchFromKeepTrack(endpoint) {
         return await response.json();
     } catch (err) {
         console.error(`Network or parsing error when calling KeepTrack API: ${err.message}`);
-        throw err; // Re-throw to be caught by the route's error handler
+        throw err;
     }
 }
 
 /**
- * --- REWRITTEN ---
+ * --- CORRECTED ---
  * Fetches pre-computed conjunction data directly from the Socrates service via KeepTrack.
- * Implements server-side sorting and limiting as the API does not support it.
  */
 router.get('/conjunctions', async (req, res) => {
     try {
-        // 1. Fetch ALL latest conjunctions from the API
-        const socratesData = await fetchFromKeepTrack('/socrates/latest');
+        // 1. Fetch the latest conjunctions from the API.
+        const conjunctions = await fetchFromKeepTrack('/socrates/latest');
         
-        // The API returns an object with a single key which is an array, we need to extract it.
-        // This is a quirk of the Socrates endpoint specifically.
-        const conjunctions = Object.values(socratesData)[0] || [];
+        // 2. CORRECTED: The API returns an array directly. We add a robust check.
+        if (!Array.isArray(conjunctions)) {
+            console.error('API Error on /api/conjunctions: Expected an array but received something else.');
+            // This prevents the .map() error from crashing the route.
+            return res.status(500).json({ error: 'Invalid data format received from KeepTrack API.' });
+        }
 
-        // 2. Map the API response to our application's data structure
+        // 3. Map the API response to our application's data structure
         let mappedConjunctions = conjunctions.map(c => ({
             id: c.ID,
             primary_scc: c.SAT1,
@@ -51,10 +54,10 @@ router.get('/conjunctions', async (req, res) => {
             tca: c.TOCA,
             miss_distance_km: c.MIN_RNG,
             relative_speed_km_s: c.REL_SPEED,
-            max_prob: c.MAX_PROB, // We can now use real probability!
+            max_prob: c.MAX_PROB,
         }));
 
-        // 3. Apply sorting logic in our backend (since the API doesn't)
+        // 4. Apply sorting logic in our backend
         const sortBy = req.query.sortBy || 'max_prob';
         const sortOrder = (req.query.sortOrder || 'desc').toLowerCase() === 'asc' ? 1 : -1;
 
@@ -70,16 +73,19 @@ router.get('/conjunctions', async (req, res) => {
             mappedConjunctions.sort(sortFunctions[sortBy]);
         }
 
-        // 4. Apply limit
+        // 5. Apply limit
         const limit = parseInt(req.query.limit, 10) || 100;
         const finalConjunctions = mappedConjunctions.slice(0, limit);
 
         res.json({ count: finalConjunctions.length, conjunctions: finalConjunctions });
     } catch (err) {
+        // This will catch errors from fetchFromKeepTrack or any other unexpected issues.
         console.error('API Error on /api/conjunctions:', err.message);
         res.status(500).json({ error: 'Failed to retrieve conjunction data from KeepTrack.' });
     }
 });
+
+// The rest of the routes file remains the same...
 
 /**
  * --- REWRITTEN ---
@@ -92,8 +98,13 @@ router.get('/conjunctions/:scc_number', async (req, res) => {
     }
 
     try {
-        const socratesData = await fetchFromKeepTrack('/socrates/latest');
-        const allConjunctions = Object.values(socratesData)[0] || [];
+        const allConjunctions = await fetchFromKeepTrack('/socrates/latest');
+
+        // Add the same robust check here.
+        if (!Array.isArray(allConjunctions)) {
+            console.error(`API Error on /api/conjunctions/${scc_number}: Expected an array.`);
+            return res.status(500).json({ error: 'Invalid data format from KeepTrack API.' });
+        }
 
         const satelliteConjunctions = allConjunctions
             .filter(c => c.SAT1 === scc_number || c.SAT2 === scc_number)
@@ -268,5 +279,50 @@ router.get('/propagate/:scc_number', async (req, res) => {
     }
 });
 
+/**
+ * --- ADDED ---
+ * Initiates maneuver planning for a specific satellite by spawning a background process.
+ */
+router.post('/plan/:scc_number', async (req, res) => {
+    const { scc_number } = req.params;
+    log(`[API Plan] Received request to plan maneuvers for satellite #${scc_number}.`);
+    
+    try {
+        // Import and run the maneuver planning function directly
+        const { planManeuvers } = await import('../services/planManeuvers.js');
+        log(`[API Plan] Starting maneuver planning for satellite #${scc_number}...`);
+        
+        await planManeuvers(scc_number);
+        
+        // Get the updated conjunction data to return summary
+        const { openPrimaryDbForScript } = await import('../services/dataManager.js');
+        const db = await openPrimaryDbForScript();
+        const updatedConjunctions = await db.all(
+            'SELECT * FROM conjunctions WHERE (primary_scc = ? OR secondary_scc = ?) AND required_burn_dv_mps IS NOT NULL', 
+            [scc_number, scc_number]
+        );
+        await db.close();
+        
+        const plannedCount = updatedConjunctions.length;
+        const totalDeltaV = updatedConjunctions.reduce((sum, conj) => sum + (conj.required_burn_dv_mps || 0), 0);
+        
+        log(`[API Plan] Maneuver planning completed for satellite #${scc_number}.`);
+        res.status(200).json({ 
+            status: 'completed', 
+            message: `Maneuver planning completed for satellite #${scc_number}. Planned ${plannedCount} maneuvers with total Δv of ${totalDeltaV.toFixed(2)} m/s.`,
+            summary: {
+                plannedManeuvers: plannedCount,
+                totalDeltaV: totalDeltaV,
+                satelliteId: scc_number
+            }
+        });
+    } catch (error) {
+        log(`[ERROR] Maneuver planning failed for satellite #${scc_number}: ${error.message}`);
+        res.status(500).json({ 
+            status: 'error', 
+            message: `Maneuver planning failed: ${error.message}` 
+        });
+    }
+});
 
 export default router;

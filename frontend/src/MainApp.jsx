@@ -5,6 +5,7 @@ import GlobeCanvas from './components/GlobeCanvas';
 import ControlDock from './components/ControlDock';
 import ImportSatelliteDialog from './components/ImportSatelliteDialog';
 import { fetchSatellites } from './store/satelliteSlice';
+import Sidebar from './components/Sidebar';
 
 const appContainerStyles = {
   display: 'flex',
@@ -12,11 +13,20 @@ const appContainerStyles = {
   height: '100vh',
   backgroundColor: '#000011',
   fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif',
+  overflow: 'hidden',
 };
 
 const mainContentStyles = {
   flexGrow: 1,
+  display: 'flex',
   position: 'relative',
+  overflow: 'hidden',
+};
+
+const globeWrapperStyles = {
+    flex: '1 1 auto',
+    position: 'relative',
+    minWidth: 0,
 };
 
 function MainApp() {
@@ -24,6 +34,7 @@ function MainApp() {
   const [isRotationEnabled, setIsRotationEnabled] = useState(true);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedSatellite, setSelectedSatellite] = useState(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     dispatch(fetchSatellites());
@@ -48,15 +59,23 @@ function MainApp() {
     <div style={appContainerStyles}>
       <Header />
       <div style={mainContentStyles}>
-        <GlobeCanvas
-          isRotationEnabled={isRotationEnabled}
-          selectedSatellite={selectedSatellite}
-          onSatelliteClick={handleSatelliteSelect}
-        />
-        <ControlDock
-          isRotationEnabled={isRotationEnabled}
-          onRotationChange={() => setIsRotationEnabled((prev) => !prev)}
-          onOpenImportDialog={() => setIsImportDialogOpen(true)}
+        <div style={globeWrapperStyles}>
+          <GlobeCanvas
+            isRotationEnabled={isRotationEnabled}
+            selectedSatellite={selectedSatellite}
+            onSatelliteClick={handleSatelliteSelect}
+          />
+          <ControlDock
+            isRotationEnabled={isRotationEnabled}
+            onRotationChange={() => setIsRotationEnabled((prev) => !prev)}
+            onOpenImportDialog={() => setIsImportDialogOpen(true)}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen(prev => !prev)}
+          />
+        </div>
+        <Sidebar 
+            isOpen={isSidebarOpen} 
+            onClose={() => setIsSidebarOpen(false)}
         />
         <ImportSatelliteDialog
           open={isImportDialogOpen}

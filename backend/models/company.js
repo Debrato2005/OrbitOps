@@ -5,7 +5,9 @@ const satelliteSchema = new mongoose.Schema({
     name: { type: String },
     tleLine1: { type: String },
     tleLine2: { type: String },
-    details: { type: mongoose.Schema.Types.Mixed }
+    details: { type: mongoose.Schema.Types.Mixed },
+    riskData: { type: mongoose.Schema.Types.Mixed, required: false }
+
 });
 
 const companySchema = new mongoose.Schema({

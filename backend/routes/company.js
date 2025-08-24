@@ -111,6 +111,75 @@ router.get("/profile", requireAuth, async (req, res) => {
   }
 });
 
+router.get("/satellites/with-risk-analysis", requireAuth, async (req, res) => {
+    try {
+        const companyId = req.companyId;
+        const company = await Company.findOne({ companyId: companyId });
+
+        if (!company) {
+            return res.status(404).json({ error: "Company not found" });
+        }
+
+        // 1. Get the list of all active conjunctions from the analysis engine
+        let allConjunctions = [];
+        try {
+            const analysisResponse = await fetch('http://localhost:5001/api/conjunctions');
+            if (analysisResponse.ok) {
+                const analysisData = await analysisResponse.json();
+                allConjunctions = analysisData.conjunctions || [];
+            } else {
+                console.error("Could not fetch conjunctions from analysis engine.");
+                // We can still proceed, just won't be able to show risks.
+            }
+        } catch (e) {
+            console.error("Network error connecting to analysis engine:", e.message);
+        }
+
+        // 2. Create a lookup map for fast risk checking
+        const riskMap = new Map();
+        console.log(`Processing ${allConjunctions.length} conjunctions for risk assessment...`);
+        
+        for (const conj of allConjunctions) {
+            // Convert SCC numbers to integers for consistent comparison
+            const primaryScc = parseInt(conj.primary_scc, 10);
+            const secondaryScc = parseInt(conj.secondary_scc, 10);
+            
+            // Skip invalid SCC numbers
+            if (isNaN(primaryScc) || isNaN(secondaryScc)) {
+                console.warn(`Skipping conjunction with invalid SCC numbers: primary=${conj.primary_scc}, secondary=${conj.secondary_scc}`);
+                continue;
+            }
+            
+            // Map both primary and secondary satellites to the conjunction data
+            if (!riskMap.has(primaryScc)) riskMap.set(primaryScc, []);
+            if (!riskMap.has(secondaryScc)) riskMap.set(secondaryScc, []);
+            riskMap.get(primaryScc).push(conj);
+            riskMap.get(secondaryScc).push(conj);
+        }
+        
+        console.log(`Risk map created with ${riskMap.size} unique satellites`);
+
+        // 3. Augment the tracked satellite data with the risk information
+        const trackedSatellitesWithRisk = company.trackedSatellites.map(sat => {
+            const satObject = sat.toObject(); // Convert Mongoose doc to plain object
+            const noradId = satObject.noradId;
+            const risks = riskMap.get(noradId) || [];
+
+            return {
+                ...satObject,
+                hasRisk: risks.length > 0,
+                riskEvents: risks // Send the full conjunction details back
+            };
+        });
+
+        res.json(trackedSatellitesWithRisk);
+
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
 router.get("/satellites", requireAuth, async (req, res) => {
   try {
     const companyId = req.companyId;

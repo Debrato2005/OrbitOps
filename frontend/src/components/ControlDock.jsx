@@ -1,6 +1,7 @@
 import { Tooltip, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import GlobeIcon from '../assets/globe.svg?react';
 import SatelliteIcon from '../assets/satellite.svg?react'; 
+import AnalyticsIcon from '@mui/icons-material/Analytics';
 
 const groupStyles = {
   position: 'absolute',
@@ -31,7 +32,7 @@ const buttonStyles = {
   },
 };
 
-function ControlDock({ isRotationEnabled, onRotationChange, onOpenImportDialog }) {
+function ControlDock({ isRotationEnabled, onRotationChange, onOpenImportDialog, isSidebarOpen, onToggleSidebar }) {
   return (
     <ToggleButtonGroup sx={groupStyles} aria-label="globe controls">
       <Tooltip title="Toggle Rotation">
@@ -47,12 +48,23 @@ function ControlDock({ isRotationEnabled, onRotationChange, onOpenImportDialog }
       </Tooltip>
       <Tooltip title="Add Satellite">
         <ToggleButton
-          value="edit"
+          value="add"
           onClick={onOpenImportDialog}
           sx={buttonStyles}
           aria-label="add satellite"
         >
           <SatelliteIcon />
+        </ToggleButton>
+      </Tooltip>
+      <Tooltip title="View Risks">
+        <ToggleButton
+          value="risks"
+          selected={isSidebarOpen}
+          onClick={onToggleSidebar}
+          sx={buttonStyles}
+          aria-label="view risks"
+        >
+          <AnalyticsIcon />
         </ToggleButton>
       </Tooltip>
     </ToggleButtonGroup>

@@ -1,11 +1,13 @@
 import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./authSlice";
-import satelliteReducer from "./satelliteSlice"; // Import the new reducer
+import satelliteReducer from "./satelliteSlice";
+import analysisReducer from './analysisSlice';
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
-    satellites: satelliteReducer, // Add the satellite reducer
+    satellites: satelliteReducer,
+    analysis: analysisReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
