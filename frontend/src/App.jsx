@@ -1,6 +1,8 @@
-import { useRef, useEffect, useState, useLayoutEffect } from 'react';
-import Globe from 'react-globe.gl';
-import Header from './Header';
+import { useEffect, useState } from 'react';
+import Header from './components/Header';
+import GlobeCanvas from './components/GlobeCanvas';
+import ControlDock from './components/ControlDock';
+import InputDialog from './components/InputDialog';
 
 const appContainerStyles = {
   display: 'flex',
@@ -10,16 +12,15 @@ const appContainerStyles = {
   fontFamily: 'system-ui, Avenir, Helvetica, Arial, sans-serif',
 };
 
-const globeContainerStyles = {
+const mainContentStyles = {
   flexGrow: 1,
   position: 'relative',
-  width: '100%',
 };
 
 function App() {
-  const globeEl = useRef();
-  const globeContainerRef = useRef(null);
-  const [globeSize, setGlobeSize] = useState({ width: 0, height: 0 });
+  const [isRotationEnabled, setIsRotationEnabled] = useState(true);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [inputValue, setInputValue] = useState('');
 
   useEffect(() => {
     document.documentElement.style.overflow = 'hidden';
@@ -29,81 +30,28 @@ function App() {
     document.getElementById('root').style.height = '100%';
   }, []);
 
-  useLayoutEffect(() => {
-    function updateSize() {
-      if (globeContainerRef.current) {
-        setGlobeSize({
-          width: globeContainerRef.current.offsetWidth,
-          height: globeContainerRef.current.offsetHeight
-        });
-      }
-    }
-    window.addEventListener('resize', updateSize);
-    updateSize();
-    return () => window.removeEventListener('resize', updateSize);
-  }, []);
-
-  useEffect(() => {
-    const globe = globeEl.current;
-    if (!globe) return;
-
-    const controls = globe.controls();
-    controls.autoRotate = false;
-    controls.enableRotate = true; 
-    controls.enableZoom = true;
-
-    let globeMesh;
-    globe.scene().traverse(obj => {
-      if (obj.isMesh && obj.material && obj.material.map) {
-        globeMesh = obj;
-      }
-    });
-
-    if (!globeMesh) return;
-
-    let isAnimating = true;
-    let animationFrameId;
-
-    const animate = () => {
-      if (isAnimating && globeMesh) {
-        globeMesh.rotation.y += 0.002; // Adjust for spin speed
-      }
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    const handleInteractionStart = () => {
-      isAnimating = false;
-    };
-
-    const handleInteractionEnd = () => {
-      isAnimating = true;
-    };
-
-    controls.addEventListener('start', handleInteractionStart);
-    controls.addEventListener('end', handleInteractionEnd);
-    
-    animate();
-
-    return () => {
-      cancelAnimationFrame(animationFrameId);
-      controls.removeEventListener('start', handleInteractionStart);
-      controls.removeEventListener('end', handleInteractionEnd);
-    };
-  }, [globeSize]);
+  const handleSubmit = () => {
+    console.log('Submitted value:', inputValue);
+    setIsDialogOpen(false);
+  };
 
   return (
     <div style={appContainerStyles}>
       <Header />
-      <div ref={globeContainerRef} style={globeContainerStyles}>
-        {globeSize.width > 0 && (
-          <Globe
-            ref={globeEl}
-            width={globeSize.width}
-            height={globeSize.height}
-            globeImageUrl="/earth-day.jpg"
-            backgroundImageUrl="/night-sky.jpg"
-          />
-        )}
+      <div style={mainContentStyles}>
+        <GlobeCanvas isRotationEnabled={isRotationEnabled} />
+        <ControlDock
+          isRotationEnabled={isRotationEnabled}
+          onRotationChange={() => setIsRotationEnabled((prev) => !prev)}
+          onOpenDialog={() => setIsDialogOpen(true)}
+        />
+        <InputDialog
+          open={isDialogOpen}
+          onClose={() => setIsDialogOpen(false)}
+          onSubmit={handleSubmit}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+        />
       </div>
     </div>
   );
