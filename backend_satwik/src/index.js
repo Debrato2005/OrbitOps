@@ -1,45 +1,51 @@
+
+
 import express from 'express';
 import cors from 'cors';
-import { connectDb, connectDebrisDb, connectRawTleDb, ingestLatestTles } from './services/dataManager.js';
+
+// Database connection functions now come from dataManager.js
+import { connectDb, connectDebrisDb } from './services/dataManager.js';
 import apiRoutes from './api/routes.js';
-//import analysisRoutes from './api/analysisRoutes.js'; 
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// --- Middleware ---
+//  Middleware 
 app.use(cors());
 app.use(express.json());
 
-// --- Mount API Routes ---
+//  Mount API Routes 
 app.use('/api', apiRoutes);
-//app.use('/api', analysisRoutes); 
 
 /**
- * Starts the server after initializing the databases and performing the initial data ingest.
+ * Starts the server after ensuring database connections are established.
+ * Data ingestion is now a separate, manual process.
  */
 async function startServer() {
     try {
-        // 1. Connect to all databases and ensure their schemas are created
+        // 1. Connect to all required databases and ensure their schemas are created.
+        // The API server's only job is to serve data from these databases.
         await connectDb();
         await connectDebrisDb();
-        await connectRawTleDb();
         
-        // 2. Perform the initial data load for the primary catalog on startup
-        //    You might comment this out if you only want to ingest data manually
-        await ingestLatestTles();
+        // --- THIS IS THE FIX (Part 2) ---
+        // The data ingestion call has been removed from the server startup.
+        // To populate the database, you must now run `npm run db:ingest` from your terminal.
+        // This decouples the server's operation from the data-fetching process, making it faster and more stable.
 
-        // 3. Start the API server
+        // 2. Start the API server to listen for requests.
         app.listen(PORT, () => {
             console.log(`🚀 OrbitOps backend server is running on http://localhost:${PORT}`);
             console.log(`📡 API endpoints available at http://localhost:${PORT}/api`);
+            console.log(`➡️ To populate or update the database, run "npm run db:ingest" in a separate terminal.`);
         });
 
-    } catch (err) {
+    } catch (err)
+     {
         console.error('Failed to start server:', err);
         process.exit(1);
     }
 }
 
-// --- Start the application ---
+// Start the application 
 startServer();

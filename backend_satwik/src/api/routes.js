@@ -1,56 +1,89 @@
-import { Router } from 'express';
-import { Satellite } from 'ootk';
-import { connectDb, connectDebrisDb, connectRawTleDb } from '../services/dataManager.js';
+// src/api/routes.js
 
+import { Router } from 'express';
 
 const router = Router();
+const API_BASE_URL = 'https://api.keeptrack.space/v2';
 
+/**
+ * A helper function to fetch data from the KeepTrack API and handle errors.
+ * @param {string} endpoint The API endpoint to call (e.g., '/socrates/latest').
+ * @returns {Promise<any>} The JSON response from the API.
+ * @throws {Error} If the fetch operation fails.
+ */
+async function fetchFromKeepTrack(endpoint) {
+    try {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`);
+        if (!response.ok) {
+            // Log the error for debugging on the server
+            const errorBody = await response.text();
+            console.error(`KeepTrack API Error (${response.status}): ${errorBody}`);
+            throw new Error(`Failed to fetch data from KeepTrack API. Status: ${response.status}`);
+        }
+        return await response.json();
+    } catch (err) {
+        console.error(`Network or parsing error when calling KeepTrack API: ${err.message}`);
+        throw err; // Re-throw to be caught by the route's error handler
+    }
+}
+
+/**
+ * --- REWRITTEN ---
+ * Fetches pre-computed conjunction data directly from the Socrates service via KeepTrack.
+ * Implements server-side sorting and limiting as the API does not support it.
+ */
 router.get('/conjunctions', async (req, res) => {
     try {
-        const db = await connectDb();
-        const limit = parseInt(req.query.limit, 10) || 100;
+        // 1. Fetch ALL latest conjunctions from the API
+        const socratesData = await fetchFromKeepTrack('/socrates/latest');
+        
+        // The API returns an object with a single key which is an array, we need to extract it.
+        // This is a quirk of the Socrates endpoint specifically.
+        const conjunctions = Object.values(socratesData)[0] || [];
 
-        const sortBy = req.query.sortBy || 'max_prob'; // Default sort
-        const sortOrder = (req.query.sortOrder || 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        // 2. Map the API response to our application's data structure
+        let mappedConjunctions = conjunctions.map(c => ({
+            id: c.ID,
+            primary_scc: c.SAT1,
+            secondary_scc: c.SAT2,
+            primary_name: c.SAT1_NAME,
+            secondary_name: c.SAT2_NAME,
+            tca: c.TOCA,
+            miss_distance_km: c.MIN_RNG,
+            relative_speed_km_s: c.REL_SPEED,
+            max_prob: c.MAX_PROB, // We can now use real probability!
+        }));
 
-        const allowedSorts = {
-            'max_prob': 'max_prob',
-            'min_range': 'miss_distance_km',
-            'tca': 'tca',
-            'rel_speed': 'relative_speed_km_s',
-            'ssc': 'primary_scc'
+        // 3. Apply sorting logic in our backend (since the API doesn't)
+        const sortBy = req.query.sortBy || 'max_prob';
+        const sortOrder = (req.query.sortOrder || 'desc').toLowerCase() === 'asc' ? 1 : -1;
+
+        const sortFunctions = {
+            'max_prob': (a, b) => (a.max_prob - b.max_prob) * sortOrder,
+            'min_range': (a, b) => (a.miss_distance_km - b.miss_distance_km) * sortOrder,
+            'tca': (a, b) => (new Date(a.tca) - new Date(b.tca)) * sortOrder,
+            'rel_speed': (a, b) => (a.relative_speed_km_s - b.relative_speed_km_s) * sortOrder,
+            'ssc': (a, b) => (a.primary_scc - b.primary_scc) * sortOrder,
         };
-
-        const orderByColumn = allowedSorts[sortBy] || 'max_prob';
-        let orderByClause = `ORDER BY ${orderByColumn} ${sortOrder}`;
-
-        if (sortBy === 'min_range' && sortOrder === 'DESC') {
-             orderByClause = `ORDER BY miss_distance_km DESC`;
-        } else if (sortBy === 'min_range') {
-             orderByClause = `ORDER BY miss_distance_km ASC`;
+        
+        if (sortFunctions[sortBy]) {
+            mappedConjunctions.sort(sortFunctions[sortBy]);
         }
 
+        // 4. Apply limit
+        const limit = parseInt(req.query.limit, 10) || 100;
+        const finalConjunctions = mappedConjunctions.slice(0, limit);
 
-        if (sortBy === 'ssc') {
-            orderByClause = `ORDER BY primary_scc ASC, secondary_scc ASC`;
-        }
-
-        const conjunctions = await db.all(
-            `SELECT * FROM conjunctions ${orderByClause} LIMIT ?`,
-            [limit]
-        );
-
-        res.json({ count: conjunctions.length, conjunctions });
+        res.json({ count: finalConjunctions.length, conjunctions: finalConjunctions });
     } catch (err) {
         console.error('API Error on /api/conjunctions:', err.message);
-        res.status(500).json({ error: 'Failed to retrieve conjunction data.' });
+        res.status(500).json({ error: 'Failed to retrieve conjunction data from KeepTrack.' });
     }
 });
 
 /**
- * --- THIS IS THE UPGRADE (Part 2) ---
- * An endpoint to get conjunctions for a SINGLE specified satellite.
- * Perfect for when a user clicks on a specific satellite to get its details.
+ * --- REWRITTEN ---
+ * Fetches conjunctions for a SINGLE satellite by filtering the full Socrates list.
  */
 router.get('/conjunctions/:scc_number', async (req, res) => {
     const scc_number = parseInt(req.params.scc_number, 10);
@@ -59,170 +92,129 @@ router.get('/conjunctions/:scc_number', async (req, res) => {
     }
 
     try {
-        const db = await connectDb();
-        
-        // This query finds events where the satellite is either primary OR secondary
-        const conjunctions = await db.all(
-            `SELECT * FROM conjunctions 
-             WHERE primary_scc = ? OR secondary_scc = ? 
-             ORDER BY tca ASC`, // Always sort a single satellite's events by time
-            [scc_number, scc_number]
-        );
+        const socratesData = await fetchFromKeepTrack('/socrates/latest');
+        const allConjunctions = Object.values(socratesData)[0] || [];
+
+        const satelliteConjunctions = allConjunctions
+            .filter(c => c.SAT1 === scc_number || c.SAT2 === scc_number)
+            .map(c => ({ // Map to our consistent format
+                id: c.ID,
+                primary_scc: c.SAT1,
+                secondary_scc: c.SAT2,
+                primary_name: c.SAT1_NAME,
+                secondary_name: c.SAT2_NAME,
+                tca: c.TOCA,
+                miss_distance_km: c.MIN_RNG,
+                relative_speed_km_s: c.REL_SPEED,
+                max_prob: c.MAX_PROB,
+            }))
+            .sort((a, b) => new Date(a.tca) - new Date(b.tca)); // Always sort by time
 
         res.json({
-            source: 'database',
+            source: 'KeepTrack API',
             scc_number,
-            count: conjunctions.length,
-            conjunctions,
+            count: satelliteConjunctions.length,
+            conjunctions: satelliteConjunctions,
         });
 
     } catch (err) {
         console.error(`API Error on /api/conjunctions/${scc_number}:`, err.message);
-        res.status(500).json({ error: 'Failed to retrieve pre-computed conjunction data.' });
+        res.status(500).json({ error: 'Failed to retrieve conjunction data.' });
     }
 });
-
-router.get('/debris/sorted', async (req, res) => {
-    try {
-        const db = await connectRawTleDb();
-        const limit = parseInt(req.query.limit, 10) || 100;
-        const offset = parseInt(req.query.offset, 10) || 0;
-        const sortBy = req.query.sortBy || 'scc_number'; // Default sort
-        const sortOrder = (req.query.sortOrder || 'asc').toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
-
-        let orderByClause;
-
-        // Whitelist allowed columns to prevent SQL injection
-        switch (sortBy) {
-            case 'scc_number':
-                orderByClause = `ORDER BY scc_number ${sortOrder}`;
-                break;
-            case 'rcs':
-                // Use a CASE statement for logical sorting of text categories
-                orderByClause = `
-                    ORDER BY
-                        CASE rcs_size
-                            WHEN 'LARGE' THEN 1
-                            WHEN 'MEDIUM' THEN 2
-                            WHEN 'SMALL' THEN 3
-                            ELSE 4
-                        END ${sortOrder}, scc_number ASC
-                `;
-                break;
-            default:
-                orderByClause = `ORDER BY scc_number ${sortOrder}`;
-        }
-        
-        const objects = await db.all(
-            `SELECT scc_number, name, rcs_size, country, updated_at FROM tles ${orderByClause} LIMIT ? OFFSET ?`,
-            [limit, offset]
-        );
-        
-        const { total } = await db.get('SELECT COUNT(*) as total FROM tles');
-
-        res.json({
-            meta: { total, limit, offset, count: objects.length, sortBy, sortOrder },
-            objects,
-        });
-    } catch (err) {
-        console.error('API Error on /api/debris/sorted:', err.message);
-        res.status(500).json({ error: 'Failed to retrieve sorted debris data.' });
-    }
-});
-
-
-router.get('/tles/debris', async (req, res) => {
-    try {
-        const db = await connectRawTleDb(); // Use the new connection function
-        const limit = parseInt(req.query.limit, 10) || 1000;
-        const offset = parseInt(req.query.offset, 10) || 0;
-
-        const tles = await db.all(
-            `SELECT scc_number, name, tle1, tle2, updated_at
-             FROM tles
-             ORDER BY scc_number
-             LIMIT ? OFFSET ?`,
-            [limit, offset]
-        );
-        
-        const { total } = await db.get('SELECT COUNT(*) as total FROM tles');
-
-        res.json({
-            meta: { total, limit, offset, count: tles.length },
-            tles,
-        });
-    } catch (err) {
-        console.error('API Error on /api/tles/debris:', err.message);
-        res.status(500).json({ error: 'Failed to retrieve raw TLE data.' });
-    }
-});
-
-
-
-router.get('/debris', async (req, res) => {
-    try {
-        const db = await connectDebrisDb(); // Use the new connection function
-        const limit = parseInt(req.query.limit, 10) || 1000;
-        const offset = parseInt(req.query.offset, 10) || 0;
-
-        const objects = await db.all(
-            `SELECT scc_number, name, epoch, apogee_km, perigee_km, inclination_deg, object_type
-             FROM satellites
-             ORDER BY scc_number
-             LIMIT ? OFFSET ?`,
-            [limit, offset]
-        );
-        
-        const { total } = await db.get('SELECT COUNT(*) as total FROM satellites');
-
-        res.json({
-            meta: {
-                total,
-                limit,
-                offset,
-                count: objects.length,
-            },
-            objects,
-        });
-    } catch (err) {
-        console.error('API Error on /api/debris:', err.message);
-        res.status(500).json({ error: 'Failed to retrieve debris data.' });
-    }
-});
-
 
 /**
- * Propagates every satellite in the database to the current time and returns
- * a snapshot of their positions and velocities. This is for initial scene loading.
+ * --- REWRITTEN & CONSOLIDATED ---
+ * Replaces `/debris/sorted`, `/tles/debris`, and `/debris`.
+ * Fetches satellite data from the Celestrak mirror and applies sorting/pagination.
+ */
+router.get('/debris', async (req, res) => {
+    try {
+        const objects = await fetchFromKeepTrack('/sats/celestrak');
+        let sortedObjects = [...objects]; // Create a mutable copy
+
+        // Apply sorting
+        const sortBy = req.query.sortBy || 'name'; // Default to name
+        const sortOrder = (req.query.sortOrder || 'asc').toLowerCase() === 'asc' ? 1 : -1;
+
+        if (sortBy === 'rcs') {
+            const rcsOrder = { 'LARGE': 1, 'MEDIUM': 2, 'SMALL': 3 };
+            sortedObjects.sort((a, b) => {
+                const orderA = rcsOrder[a.rcs] || 4;
+                const orderB = rcsOrder[b.rcs] || 4;
+                return (orderA - orderB) * sortOrder;
+            });
+        } else if (sortBy === 'scc_number') {
+             // SCC number is inside the TLE line
+            sortedObjects.sort((a, b) => {
+                const sccA = parseInt(a.tle1.substring(2, 7), 10);
+                const sccB = parseInt(b.tle1.substring(2, 7), 10);
+                return (sccA - sccB) * sortOrder;
+            });
+        } else { // Default sort by name
+            sortedObjects.sort((a, b) => a.name.localeCompare(b.name) * sortOrder);
+        }
+
+        // Apply pagination
+        const limit = parseInt(req.query.limit, 10) || 100;
+        const offset = parseInt(req.query.offset, 10) || 0;
+        const paginatedObjects = sortedObjects.slice(offset, offset + limit);
+
+        // Map to a final, clean structure
+        const finalObjects = paginatedObjects.map(obj => ({
+            scc_number: parseInt(obj.tle1.substring(2, 7), 10),
+            name: obj.name,
+            rcs_size: obj.rcs,
+            country: obj.country,
+        }));
+
+        res.json({
+            meta: { total: objects.length, limit, offset, count: finalObjects.length, sortBy, sortOrder },
+            objects: finalObjects,
+        });
+
+    } catch (err) {
+        console.error('API Error on /api/debris:', err.message);
+        res.status(500).json({ error: 'Failed to retrieve satellite data.' });
+    }
+});
+
+/**
+ * --- REWRITTEN ---
+ * Generates a snapshot by calling the KeepTrack API for each satellite's ECI position.
+ * WARNING: This is VERY slow and makes thousands of API calls. It's not recommended
+ * for production but fulfills the goal of relying solely on the API.
+ * A `limit` parameter is added for practical testing.
  */
 router.get('/snapshot', async (req, res) => {
     try {
-        const db = await connectDb();
-        // Fetch all TLEs from the database
-        const allRecords = await db.all('SELECT scc_number, name, tle1, tle2 FROM satellites');
-
         const now = new Date();
+        const time_iso = now.toISOString().split('.')[0] + "Z"; // Format for API
         
-        const snapshot = allRecords.map(record => {
+        // Fetch the list of all satellites
+        let allSats = await fetchFromKeepTrack('/sats/celestrak');
+        
+        // Add a limit for testing to prevent thousands of requests
+        const limit = parseInt(req.query.limit, 10) || 200; // Limit to 200 by default
+        allSats = allSats.slice(0, limit);
+
+        const snapshotPromises = allSats.map(async (sat) => {
+            const scc_number = parseInt(sat.tle1.substring(2, 7), 10);
             try {
-                const sat = new Satellite({ tle1: record.tle1, tle2: record.tle2, name: record.name });
-                const eci = sat.eci(now);
-
-                if (!eci || !eci.position) {
-                    return null; // Handle propagation failure
-                }
-
+                const eci = await fetchFromKeepTrack(`/sat/${scc_number}/eci/${time_iso}`);
                 return {
-                    scc_number: record.scc_number,
-                    name: record.name,
-                    r: [eci.position.x, eci.position.y, eci.position.z], // Position vector
-                    v: [eci.velocity.x, eci.velocity.y, eci.velocity.z], // Velocity vector
+                    scc_number,
+                    name: sat.name,
+                    r: [eci.position.x, eci.position.y, eci.position.z],
+                    v: [eci.velocity.x, eci.velocity.y, eci.velocity.z],
                 };
             } catch (e) {
-                // Ignore satellites that fail to parse or propagate
+                // Ignore satellites that fail to propagate via the API
                 return null;
             }
-        }).filter(Boolean); // Filter out any null results from failed propagations
+        });
+
+        const snapshot = (await Promise.all(snapshotPromises)).filter(Boolean);
 
         res.json({
             timestamp: now.toISOString(),
@@ -238,75 +230,33 @@ router.get('/snapshot', async (req, res) => {
 
 
 /**
- * GET /objects
- * Retrieves a list of all satellites from the database.
- * Supports pagination with `limit` and `offset` query parameters.
+ * --- REWRITTEN ---
+ * Propagates an orbit by calling the KeepTrack ECI endpoint for each time step.
+ * The route is now a GET request for simplicity.
  */
-router.get('/objects', async (req, res) => {
+router.get('/propagate/:scc_number', async (req, res) => {
     try {
-        const db = await connectDb();
-        const limit = parseInt(req.query.limit, 10) || 1000;
-        const offset = parseInt(req.query.offset, 10) || 0;
+        const scc_number = req.params.scc_number;
+        const { start_iso, duration_s = 3600, step_s = 60 } = req.query;
 
-        const objects = await db.all(
-            `SELECT scc_number, name, epoch, apogee_km, perigee_km, inclination_deg
-             FROM satellites
-             ORDER BY scc_number
-             LIMIT ? OFFSET ?`,
-            [limit, offset]
-        );
-        
-        const { total } = await db.get('SELECT COUNT(*) as total FROM satellites');
-
-        res.json({
-            meta: {
-                total,
-                limit,
-                offset,
-                count: objects.length,
-            },
-            objects,
-        });
-    } catch (err) {
-        console.error('API Error on /api/objects:', err.message);
-        res.status(500).json({ error: 'Failed to retrieve satellite data.' });
-    }
-});
-
-/**
- * POST /propagate
- * Propagates the orbit for a given satellite and returns its ephemeris.
- * Body: { scc_number, start_iso, duration_s, step_s }
- */
-router.post('/propagate', async (req, res) => {
-    try {
-        const { scc_number, start_iso, duration_s = 3600, step_s = 60 } = req.body;
-
-        if (!scc_number) {
-            return res.status(400).json({ error: 'scc_number is required.' });
-        }
-
-        const db = await connectDb();
-        const record = await db.get('SELECT tle1, tle2 FROM satellites WHERE scc_number = ?', [scc_number]);
-
-        if (!record) {
-            return res.status(404).json({ error: `Satellite with SCC number ${scc_number} not found.` });
-        }
-
-        const sat = new Satellite({ tle1: record.tle1, tle2: record.tle2 });
         const startDate = start_iso ? new Date(start_iso) : new Date();
-        const steps = Math.max(1, Math.ceil(duration_s / step_s));
+        const steps = Math.max(1, Math.ceil(parseInt(duration_s, 10) / parseInt(step_s, 10)));
         
         const positions = [];
         for (let i = 0; i < steps; i++) {
-            const time = new Date(startDate.getTime() + i * step_s * 1000);
-            const eci = sat.eci(time);
-            if (eci && eci.position) {
+            const time = new Date(startDate.getTime() + i * parseInt(step_s, 10) * 1000);
+            const time_iso = time.toISOString().split('.')[0] + "Z";
+
+            try {
+                const eci = await fetchFromKeepTrack(`/sat/${scc_number}/eci/${time_iso}`);
                 positions.push({
                     t: time.toISOString(),
                     r: [eci.position.x, eci.position.y, eci.position.z],
                     v: [eci.velocity.x, eci.velocity.y, eci.velocity.z],
                 });
+            } catch (e) {
+                // Skip any steps that fail
+                console.warn(`Could not propagate SCC ${scc_number} at time ${time_iso}`);
             }
         }
         
@@ -317,8 +267,6 @@ router.post('/propagate', async (req, res) => {
         res.status(500).json({ error: 'An error occurred during propagation.' });
     }
 });
-
-
 
 
 export default router;

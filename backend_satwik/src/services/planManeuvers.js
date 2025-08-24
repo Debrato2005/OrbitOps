@@ -1,161 +1,139 @@
 // src/services/planManeuvers.js
-
-import { DetailedSatellite, Satellite, Vector3D } from 'ootk';
+// --- FINAL CORRECTED VERSION using a Linear Model ---
+import { Satellite, Vector3D } from 'ootk';
 import { openPrimaryDbForScript, openDebrisDbForScript } from './dataManager.js';
-import { fileURLToPath } from 'url';
 
-// --- Configuration ---
 const SAFE_MISS_DISTANCE_KM = 10;
+const PROBABILITY_THRESHOLD = 1e-4;
+const MIN_MISS_DISTANCE_FOR_PLANNING_KM = 5;
 const MANEUVER_TIME_OFFSET_MIN = -30;
+const MANEUVER_WINDOW_HOURS = 50;
+const MU_EARTH = 398600.4418;
 
-const log = (message) => console.log(`[${new Date().toISOString()}] ${message}`);
+const log = (msg) => console.log(`[${new Date().toISOString()}] ${msg}`);
 
-/**
- * --- OUR OWN RELIABLE MATH (FINAL VERSION) ---
- * This version uses a linear projection, which is stable and will not fail.
- * It calculates the new position based on fundamental physics principles.
- */
-export function simulateManeuver(satellite, burnTime, tca, burnMps) {
-  try {
-    const stateAtBurn = satellite.eci(burnTime);
-    const stateAtTca = satellite.eci(tca);
-    if (!stateAtBurn?.position || !stateAtBurn?.velocity || !stateAtTca?.position) return null;
+// --- Helper functions are unchanged ---
+function norm(v) { return Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z); }
+function add(v1, v2) { return new Vector3D(v1.x+v2.x, v1.y+v2.y, v1.z+v2.z); }
+function sub(v1, v2) { return new Vector3D(v1.x-v2.x, v1.y-v2.y, v1.z-v2.z); }
+function scale(v, s) { return new Vector3D(v.x*s, v.y*s, v.z*s); }
+function normalize(v) { const n = norm(v); return n === 0 ? new Vector3D(0,0,0) : scale(v, 1/n); }
+function rvToElements(r, v) { const rVec = [r.x, r.y, r.z]; const vVec = [v.x, v.y, v.z]; const rMag = Math.hypot(...rVec); const vMag = Math.hypot(...vVec); const h = [rVec[1]*vVec[2]-rVec[2]*vVec[1], rVec[2]*vVec[0]-rVec[0]*vVec[2], rVec[0]*vVec[1]-rVec[1]*vVec[0]]; const rDotV = rVec[0]*vVec[0]+rVec[1]*vVec[1]+rVec[2]*vVec[2]; const eVec = [((vMag*vMag - MU_EARTH/rMag)*rVec[0] - rDotV*vVec[0])/MU_EARTH, ((vMag*vMag - MU_EARTH/rMag)*rVec[1] - rDotV*vVec[1])/MU_EARTH, ((vMag*vMag - MU_EARTH/rMag)*rVec[2] - rDotV*vVec[2])/MU_EARTH]; const e = Math.hypot(...eVec); const energy = vMag*vMag/2 - MU_EARTH/rMag; const a = -MU_EARTH/(2*energy); return { a, e, perigee: a*(1-e), apogee: a*(1+e) }; }
 
-    const velocityAtBurn = new Vector3D(
-      stateAtBurn.velocity.x,
-      stateAtBurn.velocity.y,
-      stateAtBurn.velocity.z
-    );
-    const originalPosAtTca = new Vector3D(
-      stateAtTca.position.x,
-      stateAtTca.position.y,
-      stateAtTca.position.z
-    );
 
-    // Δv in km/s
-    const burnKps = burnMps / 1000;
+// --- Calculation function rewritten for a robust Linear Model ---
+async function findMinimalBurn(primaryAsset, secondaryAsset, burnTime, tca, targetSeparationKm) {
+    // 1. Get positions of BOTH satellites at TCA without any maneuver.
+    const primaryStateAtTca = primaryAsset.eci(tca);
+    const secondaryStateAtTca = secondaryAsset.eci(tca);
+    if (!primaryStateAtTca?.position || !secondaryStateAtTca?.position) {
+        log(`[ERROR] Could not propagate one or both assets to TCA.`);
+        return null;
+    }
+    const primaryPosAtTca = new Vector3D(primaryStateAtTca.position.x, primaryStateAtTca.position.y, primaryStateAtTca.position.z);
+    const secondaryPosAtTca = new Vector3D(secondaryStateAtTca.position.x, secondaryStateAtTca.position.y, secondaryStateAtTca.position.z);
 
-    // Unit direction of motion at burn
-    const vhat = velocityAtBurn.normalize();
+    // 2. Get the primary asset's velocity at the time of the burn.
+    const primaryStateAtBurn = primaryAsset.eci(burnTime);
+    if (!primaryStateAtBurn?.velocity) {
+        log(`[ERROR] Could not propagate primary asset to burn time.`);
+        return null;
+    }
+    const primaryVelAtBurn = new Vector3D(primaryStateAtBurn.velocity.x, primaryStateAtBurn.velocity.y, primaryStateAtBurn.velocity.z);
+    const burnDirection = normalize(primaryVelAtBurn); // Maneuvers are most efficient along the velocity vector.
+    const dtSeconds = (tca.getTime() - burnTime.getTime()) / 1000;
 
-    // Time from burn to TCA (s)
-    const dt = (tca.getTime() - burnTime.getTime()) / 1000;
+    // 3. This function now uses a linear model to find the new separation.
+    const separation = (dv_mps) => {
+        const dv_kps = dv_mps / 1000; // Convert to km/s
+        const deltaV_vector = scale(burnDirection, dv_kps); // The change in velocity
+        const deltaR_vector = scale(deltaV_vector, dtSeconds); // The resulting change in position (d = v*t)
+        
+        const newPrimaryPos = add(primaryPosAtTca, deltaR_vector); // The new position after the maneuver
+        return newPrimaryPos.distance(secondaryPosAtTca);
+    };
 
-    // First-order displacement due to Δv only (km)
-    const deltaR = new Vector3D(vhat.x * burnKps * dt, vhat.y * burnKps * dt, vhat.z * burnKps * dt);
+    // 4. Use a search algorithm to find the burn that achieves the target separation.
+    let lo = 0.0, hi = 0.1;
+    while (separation(hi) < targetSeparationKm && hi < 50) { hi *= 2; }
+    if (separation(hi) < targetSeparationKm) return null;
 
-    // New position at TCA (original orbit position + Δv effect)
-    return new Vector3D(
-      originalPosAtTca.x + deltaR.x,
-      originalPosAtTca.y + deltaR.y,
-      originalPosAtTca.z + deltaR.z
-    );
-  } catch (e) {
-    console.error("Error during manual simulation:", e);
-    return null;
-  }
+    for (let i = 0; i < 40; i++) {
+        const mid = (lo + hi) / 2;
+        if (separation(mid) < targetSeparationKm) { lo = mid; } else { hi = mid; }
+    }
+    return (lo + hi) / 2;
 }
 
 
-async function planManeuvers(scc_number) {
-    const overallStartTime = Date.now();
-    log(`Starting maneuver planning for SCC #${scc_number}...`);
+// --- Main Planner ---
+export async function planManeuvers(scc_number) {
+    const primaryDb = await openPrimaryDbForScript();
+    const debrisDb = await openDebrisDbForScript();
 
-    let primaryDb, debrisDb;
-    try {
-        primaryDb = await openPrimaryDbForScript();
-        debrisDb = await openDebrisDbForScript();
+    const primaryRec = await debrisDb.get('SELECT * FROM satellites WHERE scc_number=?', [scc_number]);
+    if (!primaryRec) { return; }
+    const primaryAsset = new Satellite(primaryRec);
+  
+    const conjunctions = await primaryDb.all('SELECT * FROM conjunctions WHERE primary_scc = ? OR secondary_scc = ?', [scc_number, scc_number]);
+    if (!conjunctions.length) { return; }
 
-        const primaryAssetRecord = await debrisDb.get('SELECT * FROM satellites WHERE scc_number = ?', [scc_number]);
-        if (!primaryAssetRecord) throw new Error(`Primary asset SCC #${scc_number} not found.`);
-        
-        // We can use the basic Satellite object now, as we don't need DetailedSatellite
-        const primaryAsset = new Satellite(primaryAssetRecord);
-        
-        const conjunctions = await primaryDb.all('SELECT * FROM conjunctions WHERE primary_scc = ?', [scc_number]);
-        if (conjunctions.length === 0) {
-            log('No conjunctions found to plan for. Exiting.');
-            return;
-        }
-        log(`Found ${conjunctions.length} conjunction events to analyze.`);
+    const updateStmt = await primaryDb.prepare(`UPDATE conjunctions SET required_burn_dv_mps=?, new_apogee_km=?, new_perigee_km=? WHERE id=?`);
+    const now = new Date();
 
-        const updateStmt = await primaryDb.prepare(
-            `UPDATE conjunctions SET
-                required_burn_dv_mps = ?,
-                new_apogee_km = ?,
-                new_perigee_km = ?
-             WHERE id = ?`
-        );
-        
-        for (const conj of conjunctions) {
-            let finalBurn = null;
-            let newApogee = null;
-            let newPerigee = null;
+    for (const conj of conjunctions) {
+        let finalBurn = null, newApogee = null, newPerigee = null;
+        const isHighRisk = conj.miss_distance_km < MIN_MISS_DISTANCE_FOR_PLANNING_KM && ((conj.max_prob != null && conj.max_prob >= PROBABILITY_THRESHOLD) || conj.max_prob == null);
+        const tca = new Date(conj.tca);
+        const hoursToTca = (tca.getTime() - now.getTime()) / 3600000;
+        const isUrgent = hoursToTca > 0 && hoursToTca <= MANEUVER_WINDOW_HOURS;
 
-            const distanceNeeded = SAFE_MISS_DISTANCE_KM - conj.miss_distance_km;
-
-            if (distanceNeeded > 0) {
-                log(`  -> Analyzing Event #${conj.id} with ${conj.secondary_scc}.`);
-                
-                const tca = new Date(conj.tca);
-                const burnTime = new Date(tca.getTime() + MANEUVER_TIME_OFFSET_MIN * 60000);
-                const testBurnMps = 0.1;
-                
-                const originalPosAtTca = primaryAsset.eci(tca).position;
-                const newPosAtTca = simulateManeuver(primaryAsset, burnTime, tca, testBurnMps);
-
-                if (newPosAtTca) {
-                    const separationGained = new Vector3D(newPosAtTca.x, newPosAtTca.y, newPosAtTca.z)
-                                              .distance(new Vector3D(originalPosAtTca.x, originalPosAtTca.y, originalPosAtTca.z));
-
-                    if (separationGained > 0) {
-                        const mpsPerKmSeparation = testBurnMps / separationGained;
-                        finalBurn = distanceNeeded * mpsPerKmSeparation;
-                        
-                        // To get the new orbit, we still need to create a temporary satellite state
-                        const finalBurnState = simulateManeuver(primaryAsset, burnTime, tca, finalBurn);
-                        const stateAtBurn = primaryAsset.eci(burnTime);
-                        const finalVelocity = new Vector3D(stateAtBurn.velocity.x, stateAtBurn.velocity.y, stateAtBurn.velocity.z).normalize().multiply((finalBurn/1000) + stateAtBurn.velocity.magnitude());
-
-                        const satWithFinalBurn = Satellite.fromState(
-                           stateAtBurn.position.x, stateAtBurn.position.y, stateAtBurn.position.z,
-                           finalVelocity.x, finalVelocity.y, finalVelocity.z,
-                           burnTime
-                        );
-                        newApogee = satWithFinalBurn.apogee;
-                        newPerigee = satWithFinalBurn.perigee;
-                        log(`     Solution Found: Burn of ${finalBurn.toFixed(3)} m/s -> New Orbit: ${newPerigee.toFixed(1)} x ${newApogee.toFixed(1)} km.`);
-                    }
-                }
+        if (isHighRisk && isUrgent) {
+            const secondaryScc = conj.primary_scc === scc_number ? conj.secondary_scc : conj.primary_scc;
+            log(`Event #${conj.id} is high-risk. Loading TLE for secondary satellite #${secondaryScc}...`);
+            const secondaryRec = await debrisDb.get('SELECT * FROM satellites WHERE scc_number=?', [secondaryScc]);
+            if (!secondaryRec) {
+                log(`   -> [ERROR] Could not find TLE for secondary satellite #${secondaryScc}.`);
+                await updateStmt.run([null, null, null, conj.id]);
+                continue;
             }
-            await updateStmt.run([finalBurn, newApogee, newPerigee, conj.id]);
+            const secondaryAsset = new Satellite(secondaryRec);
+            log(`   -> Successfully loaded TLE for ${secondaryRec.name}.`);
+            const burnTime = new Date(tca.getTime() + MANEUVER_TIME_OFFSET_MIN * 60000);
+            
+            finalBurn = await findMinimalBurn(primaryAsset, secondaryAsset, burnTime, tca, SAFE_MISS_DISTANCE_KM);
+            
+            if (finalBurn !== null) {
+                // To calculate the new orbit, we simulate the final state at the burn time
+                const preBurnState = primaryAsset.eci(burnTime);
+                if (preBurnState) {
+                    const v = new Vector3D(preBurnState.velocity.x, preBurnState.velocity.y, preBurnState.velocity.z);
+                    const postBurnVelocity = add(v, scale(normalize(v), finalBurn / 1000));
+                    const elems = rvToElements(preBurnState.position, postBurnVelocity);
+                    newApogee = elems.apogee;
+                    newPerigee = elems.perigee;
+                    log(`    -> Solution Found: Δv=${finalBurn.toFixed(3)} m/s, new orbit ${newPerigee.toFixed(1)} x ${newApogee.toFixed(1)} km`);
+                } else {
+                    log(`    -> Solution Found but could not calculate new orbit.`);
+                }
+            } else {
+                 log(`    -> Solution NOT Found.`);
+            }
         }
-        
-        await updateStmt.finalize();
-        log(`Maneuver planning complete.`);
-    } finally {
-        await primaryDb?.close();
-        await debrisDb?.close();
-        log("Script database connections closed.");
+        await updateStmt.run([finalBurn, newApogee, newPerigee, conj.id]);
     }
+
+    await updateStmt.finalize();
+    await primaryDb.close();
+    await debrisDb.close();
+    log('Maneuver planning complete.');
 }
 
-
-async function main() {
-    const scc_arg = process.argv[2];
-    if (!scc_arg || isNaN(parseInt(scc_arg, 10))) {
-        console.error("Usage: npm run plan:maneuvers -- <scc_number>");
-        process.exit(1);
-    }
-    const scc_number = parseInt(scc_arg, 10);
-    
-    try {
-        await planManeuvers(scc_number);
-    } catch(e) {
-        console.error("Maneuver planning script failed:", e.message);
-    }
-}
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-    main();
+// --- CLI ---
+if (process.argv[1].endsWith('planManeuvers.js')) {
+    const scc = parseInt(process.argv[2]);
+    if (!scc) { console.error("Usage: node planManeuvers.js <scc_number>"); process.exit(1); }
+    planManeuvers(scc).catch(e => {
+        console.error("An unhandled error occurred:", e);
+    });
 }
