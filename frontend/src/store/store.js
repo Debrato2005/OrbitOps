@@ -1,15 +1,15 @@
 import { configureStore } from "@reduxjs/toolkit";
 import authReducer from "./authSlice";
+import satelliteReducer from "./satelliteSlice"; // Import the new reducer
 
-// Configure the Redux store
 export const store = configureStore({
   reducer: {
     auth: authReducer,
+    satellites: satelliteReducer, // Add the satellite reducer
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
       serializableCheck: {
-        // Ignore these action types
         ignoredActions: ["persist/PERSIST", "persist/REHYDRATE"],
       },
     }),
