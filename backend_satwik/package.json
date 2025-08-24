@@ -1,0 +1,39 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+       "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "ingest": "node src/services/dataManager.js",
+    "ingest:debris": "node src/services/ingestDebris.js",
+    "analyze:conjunctions": "node src/services/runConjunctionAnalysis.js",
+    "test": "node test/analysis.test.js",
+    "seed:conjunction": "node src/services/seedConjunction.js",
+    "verify:maneuver": "node src/services/verifyManeuver.js",
+    "test:unit": "node test/maneuver.test.js",
+    "test:workflow": "npm run seed:conjunction && npm run plan:maneuvers -- 25544 && npm run verify:maneuver",
+    "db:ingest": "node src/services/ingestFromApi.js",
+    "db:seed": "node src/services/seedConjunction.js",
+    "plan:maneuvers": "node src/services/planManeuvers.js",
+    "plan:all": "node src/services/runManeuverPlanner.js",
+    "custom:add": "node src/services/addCustomSatellite.js",
+    "custom:analyze": "node src/services/analyzeCustomSatellite.js"
+
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0-beta.1",
+    "ootk": "^5.1.0",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
