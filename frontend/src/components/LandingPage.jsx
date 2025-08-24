@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import Header from './Header'; // Import the unified Header
 
 function LandingPage() {
   useEffect(() => {
@@ -20,20 +20,10 @@ function LandingPage() {
     <div style={styles.page}>
       <div style={styles.contentWrapper}>
         <div style={styles.overlay}></div>
-        <header style={styles.header}>
-          <div style={styles.headerContent}>
-            <div style={styles.logo}>OrbitOps</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-              <nav style={styles.nav}>
-                <a href="#features" style={styles.navLink}>Features</a>
-                <a href="#contact" style={styles.navLink}>Contact</a>
-              </nav>
-              <Link to="/" style={styles.continueButton}>
-                CONTINUE
-              </Link>
-            </div>
-          </div>
-        </header>
+        
+        {/* Use the unified Header component */}
+        <Header showContinueButton={true} />
+
         <main style={styles.main}>
           <div style={{ maxWidth: '896px' }}>
             <h1 style={styles.h1}>Empowering the Future of Space Exploration</h1>
@@ -57,8 +47,6 @@ function LandingPage() {
   );
 }
 
-// ... styles object remains the same
-
 const styles = {
   page: {
     backgroundColor: '#111827',
@@ -79,55 +67,9 @@ const styles = {
     backgroundColor: 'black',
     opacity: 0.5,
   },
-  header: {
-    position: 'relative',
-    zIndex: 10,
-    backgroundColor: '#1a1a1a',
-    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
-  },
-  headerContent: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: '16px 30px',
-  },
-  logo: {
-    margin: 0,
-    fontFamily: '"Exo 2", sans-serif',
-    fontSize: '1.8em',
-    fontWeight: 600,
-    textTransform: 'uppercase',
-    letterSpacing: '2px',
-  },
-  nav: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '32px',
-  },
-  navLink: {
-    fontFamily: "'Inter', sans-serif",
-    fontWeight: 500,
-    fontSize: '14px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-    color: 'white',
-    textDecoration: 'none',
-  },
-  continueButton: {
-    fontFamily: "'Inter', sans-serif",
-    backgroundColor: '#2563EB',
-    color: 'white',
-    fontWeight: 600,
-    padding: '10px 24px',
-    borderRadius: '8px',
-    boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
-    textDecoration: 'none',
-    fontSize: '14px',
-    letterSpacing: '0.05em',
-  },
   main: {
     position: 'relative',
-    zIndex: 10,
+    zIndex: 1, // Lower zIndex than header
     display: 'flex',
     flexGrow: 1,
     alignItems: 'center',
