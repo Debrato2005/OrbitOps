@@ -6,13 +6,14 @@ const session = require("express-session");
 const cors = require("cors");
 const companyRoutes = require("./routes/company");
 const authRoutes = require("./routes/auth");
+const satelliteRoutes = require("./routes/satellites");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const corsOptions = {
-  origin: "http://localhost:5173", 
-  credentials: true, 
+  origin: "http://localhost:5173",
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
@@ -36,6 +37,7 @@ app.use(
 console.log("API Endpoints:");
 console.log("/api/companies -> Company Routes");
 console.log("/api/auth -> Auth Routes");
+console.log("/api/satellites -> Satellite Routes");
 
 mongoose
   .connect(`${process.env.DB_URI}/${process.env.DB_NAME}`)
@@ -49,6 +51,7 @@ app.get("/health", (req, res) => {
 
 app.use("/api/companies", companyRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/satellites", satelliteRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server is running at http://localhost:${PORT}/health`);

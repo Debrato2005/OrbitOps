@@ -31,7 +31,7 @@ const buttonStyles = {
   },
 };
 
-function ControlDock({ isRotationEnabled, onRotationChange, onOpenDialog }) {
+function ControlDock({ isRotationEnabled, onRotationChange, onOpenImportDialog }) {
   return (
     <ToggleButtonGroup sx={groupStyles} aria-label="globe controls">
       <Tooltip title="Toggle Rotation">
@@ -48,11 +48,11 @@ function ControlDock({ isRotationEnabled, onRotationChange, onOpenDialog }) {
       <Tooltip title="Add Satellite">
         <ToggleButton
           value="edit"
-          onClick={onOpenDialog}
+          onClick={onOpenImportDialog}
           sx={buttonStyles}
           aria-label="add satellite"
         >
-          <SatelliteIcon /> {/* <-- Use satellite icon here */}
+          <SatelliteIcon />
         </ToggleButton>
       </Tooltip>
     </ToggleButtonGroup>

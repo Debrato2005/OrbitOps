@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { useStore } from 'react-redux';
+import { useStore, useSelector } from 'react-redux';
 import MainApp from './MainApp';
 import LandingPage from './components/LandingPage';
 import LoginForm from './components/LoginForm';
-import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import NotificationSystem from './components/NotificationSystem';
 import NetworkStatus from './components/NetworkErrorHandler';
 import { LoadingOverlay } from './components/LoadingSpinner';
 import sessionManager from './utils/sessionManager';
+import { selectIsAuthenticated } from './store/authSlice';
+
+const Root = () => {
+  const isAuthenticated = useSelector(selectIsAuthenticated);
+  return isAuthenticated ? <MainApp /> : <LandingPage />;
+};
 
 function App() {
   const store = useStore();
@@ -44,15 +49,7 @@ function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <Routes>
-          <Route 
-            path="/" 
-            element={
-              <ProtectedRoute>
-                <MainApp />
-              </ProtectedRoute>
-            } 
-          />
-          <Route path="/landing" element={<LandingPage />} />
+          <Route path="/" element={<Root />} />
           <Route path="/login" element={<LoginForm />} />
         </Routes>
         <NotificationSystem />

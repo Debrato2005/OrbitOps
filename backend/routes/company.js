@@ -4,7 +4,7 @@ const Company = require("../models/company");
 const authService = require("../services/authService");
 const { requireAuth } = require("../middleware/auth");
 const fetch = (...args) =>
-import("node-fetch").then(({ default: fetch }) => fetch(...args));
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
@@ -37,12 +37,9 @@ router.post("/login", async (req, res) => {
 });
 
 router.post("/satellites", requireAuth, async (req, res) => {
-  const { noradId } = req.body;
+  const { noradId, name, tleLine1, tleLine2 } = req.body;
   const companyId = req.companyId;
-
-  if (!noradId) {
-    return res.status(400).json({ error: "NORAD ID is required" });
-  }
+  let newSatellite;
 
   try {
     const company = await Company.findOne({ companyId: companyId });
@@ -50,36 +47,54 @@ router.post("/satellites", requireAuth, async (req, res) => {
       return res.status(404).json({ error: "Company not found" });
     }
 
-    const satelliteDetailsResponse = await fetch(
-      `https://api.keeptrack.space/v2/sat/${noradId}`
-    );
-    const satelliteTleResponse = await fetch(
-      `https://api.keeptrack.space/v2/sat/${noradId}/tle`
-    );
+    if (noradId) {
+      const satelliteDetailsResponse = await fetch(
+        `https://api.keeptrack.space/v2/sat/${noradId}`
+      );
+      const satelliteTleResponse = await fetch(
+        `https://api.keeptrack.space/v2/sat/${noradId}/tle`
+      );
 
-    if (!satelliteDetailsResponse.ok || !satelliteTleResponse.ok) {
+      if (!satelliteDetailsResponse.ok || !satelliteTleResponse.ok) {
+        return res
+          .status(404)
+          .json({ error: "Satellite not found on KeepTrack API" });
+      }
+      const satelliteDetails = await satelliteDetailsResponse.json();
+      const satelliteTle = await satelliteTleResponse.json();
+
+      newSatellite = {
+        noradId: noradId,
+        name: satelliteDetails.NAME,
+        tleLine1: satelliteTle.TLE_LINE_1,
+        tleLine2: satelliteTle.TLE_LINE_2,
+        details: satelliteDetails,
+      };
+    } else if (name && tleLine1 && tleLine2) {
+      newSatellite = {
+        noradId: Math.floor(100000 + Math.random() * 900000),
+        name: name,
+        tleLine1: tleLine1,
+        tleLine2: tleLine2,
+        details: { NAME: name, OBJECT_TYPE: "PAYLOAD" },
+      };
+    } else {
       return res
-        .status(404)
-        .json({ error: "Satellite not found on KeepTrack API" });
+        .status(400)
+        .json({
+          error: "Either NORAD ID or custom satellite data is required.",
+        });
     }
-
-    const satelliteDetails = await satelliteDetailsResponse.json();
-    const satelliteTle = await satelliteTleResponse.json();
-
-    const newSatellite = {
-      noradId: noradId,
-      name: satelliteDetails.NAME,
-      tleLine1: satelliteTle.TLE_LINE_1,
-      tleLine2: satelliteTle.TLE_LINE_2,
-      details: satelliteDetails,
-    };
 
     company.trackedSatellites.push(newSatellite);
     await company.save();
 
     res.status(201).json(company);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Satellite import error:", error);
+    res
+      .status(500)
+      .json({ error: "An error occurred during satellite import." });
   }
 });
 

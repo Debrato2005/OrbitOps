@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Header from './components/Header';
 import GlobeCanvas from './components/GlobeCanvas';
 import ControlDock from './components/ControlDock';
-import InputDialog from './components/InputDialog';
+import ImportSatelliteDialog from './components/ImportSatelliteDialog';
 
 const appContainerStyles = {
   display: 'flex',
@@ -19,28 +19,20 @@ const mainContentStyles = {
 
 function MainApp() {
   const [isRotationEnabled, setIsRotationEnabled] = useState(true);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [inputValue, setInputValue] = useState('');
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   useEffect(() => {
-    // Apply styles when the component mounts
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
     document.body.style.margin = '0';
     document.body.style.padding = '0';
     document.getElementById('root').style.height = '100%';
 
-    // Cleanup function: Reset styles when the component unmounts
     return () => {
       document.documentElement.style.overflow = 'auto';
       document.body.style.overflow = 'auto';
     };
   }, []);
-
-  const handleSubmit = () => {
-    console.log('Submitted value:', inputValue);
-    setIsDialogOpen(false);
-  };
 
   return (
     <div style={appContainerStyles}>
@@ -50,14 +42,11 @@ function MainApp() {
         <ControlDock
           isRotationEnabled={isRotationEnabled}
           onRotationChange={() => setIsRotationEnabled((prev) => !prev)}
-          onOpenDialog={() => setIsDialogOpen(true)}
+          onOpenImportDialog={() => setIsImportDialogOpen(true)}
         />
-        <InputDialog
-          open={isDialogOpen}
-          onClose={() => setIsDialogOpen(false)}
-          onSubmit={handleSubmit}
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
+        <ImportSatelliteDialog
+          open={isImportDialogOpen}
+          onClose={() => setIsImportDialogOpen(false)}
         />
       </div>
     </div>

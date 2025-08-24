@@ -2,11 +2,17 @@ import { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { ButtonSpinner } from './LoadingSpinner';
+import Button from '@mui/material/Button';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import LogoutIcon from '@mui/icons-material/Logout';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import {
   selectIsAuthenticated,
   selectAuthLoading,
+  selectUser,
   validateSession,
-  logoutUser
+  logoutUser,
 } from '../store/authSlice';
 
 const headerStyles = {
@@ -33,7 +39,7 @@ const h1Styles = {
 };
 
 const buttonStyles = {
-  backgroundColor: '#4CAF50',
+  backgroundColor: '#4a9eff', // Blue color for the continue button
   color: 'white',
   border: 'none',
   padding: '11px 22px', // Adjusted padding
@@ -51,24 +57,18 @@ const buttonStyles = {
 };
 
 const buttonHoverStyles = {
-  backgroundColor: '#45a049',
-};
-
-const logoutButtonStyles = {
-  ...buttonStyles,
-  backgroundColor: '#f44336',
-};
-
-const logoutButtonHoverStyles = {
-  backgroundColor: '#d32f2f',
+  backgroundColor: '#3a8eef', // Darker blue for hover
 };
 
 function Header({ showContinueButton = false }) {
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const authLoading = useSelector(selectAuthLoading);
+  const user = useSelector(selectUser);
   const [isValidating, setIsValidating] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const open = Boolean(anchorEl);
 
   const handleContinueClick = async () => {
     if (isAuthenticated) {
@@ -87,7 +87,16 @@ function Header({ showContinueButton = false }) {
     }
   };
 
+  const handleMenuClick = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
   const handleLogoutClick = () => {
+    handleMenuClose();
     dispatch(logoutUser());
   };
 
@@ -118,22 +127,65 @@ function Header({ showContinueButton = false }) {
       )}
 
       {isAuthenticated && !showContinueButton && (
-        <button
-          style={{
-            ...logoutButtonStyles,
-            ...(isLogoutLoading ? { ...logoutButtonHoverStyles, cursor: 'not-allowed' } : {}),
-          }}
-          onClick={handleLogoutClick}
-          disabled={isLogoutLoading}
-          onMouseEnter={(e) => {
-            if (!isLogoutLoading) e.target.style.backgroundColor = logoutButtonHoverStyles.backgroundColor;
-          }}
-          onMouseLeave={(e) => {
-            if (!isLogoutLoading) e.target.style.backgroundColor = logoutButtonStyles.backgroundColor;
-          }}
-        >
-          {isLogoutLoading ? <ButtonSpinner size="small" /> : 'Logout'}
-        </button>
+        <div>
+          <Button
+            id="user-menu-button"
+            aria-controls={open ? 'user-menu' : undefined}
+            aria-haspopup="true"
+            aria-expanded={open ? 'true' : undefined}
+            onClick={handleMenuClick}
+            endIcon={<KeyboardArrowDownIcon sx={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />}
+            sx={{
+              backgroundColor: '#2a2a2a',
+              color: 'white',
+              border: '1px solid #444',
+              padding: '9px 16px',
+              fontSize: '15px',
+              fontWeight: 600,
+              borderRadius: '6px',
+              textTransform: 'none',
+              fontFamily: '"Exo 2", sans-serif',
+              '&:hover': {
+                backgroundColor: '#3a3a3a',
+                borderColor: '#555',
+              },
+            }}
+          >
+            <span>{user?.companyName || 'User Menu'}</span>
+          </Button>
+          <Menu
+            id="user-menu"
+            anchorEl={anchorEl}
+            open={open}
+            onClose={handleMenuClose}
+            MenuListProps={{
+              'aria-labelledby': 'user-menu-button',
+            }}
+            PaperProps={{
+              sx: {
+                backgroundColor: '#2a2a2a',
+                color: 'white',
+                border: '1px solid #444',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.5)',
+                mt: 1.5,
+              },
+            }}
+          >
+            <MenuItem
+              onClick={handleLogoutClick}
+              disabled={isLogoutLoading}
+              sx={{
+                fontFamily: '"Exo 2", sans-serif',
+                '&:hover': {
+                  backgroundColor: '#3a3a3a',
+                },
+              }}
+            >
+              <LogoutIcon sx={{ mr: 1.5, color: '#ccc' }} />
+              {isLogoutLoading ? 'Logging out...' : 'Logout'}
+            </MenuItem>
+          </Menu>
+        </div>
       )}
     </header>
   );
