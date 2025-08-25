@@ -19,7 +19,7 @@
     "plan:maneuvers": "node src/services/planManeuvers.js",
     "plan:all": "node src/services/runManeuverPlanner.js",
     "custom:add": "node src/services/addCustomSatellite.js",
-    "custom:analyze": "node src/services/analyzeCustomSatellite.js"
+    "custom:analyze": "node src/services/analyzeSatellite.js"
 
   },
   "keywords": [],

@@ -1,11 +1,11 @@
 import { Satellite, Vector3D } from 'ootk';
 import { openPrimaryDbForScript, openDebrisDbForScript } from './dataManager.js';
 
-// --- OPTIMIZED CONFIGURATION ---
-const PREDICTION_WINDOW_HOURS = 24;      // REDUCED: Halves the work.
-const PROPAGATION_STEP_S = 180;          // INCREASED: Reduces work by another 33%.
-const MISS_DISTANCE_THRESHOLD_KM = 10;   // Report anything within 10km.
-const ORBIT_FILTER_TOLERANCE_KM = 100; // Add a buffer to the orbital filter for safety.
+
+const PREDICTION_WINDOW_HOURS = 24;     
+const PROPAGATION_STEP_S = 180;          
+const MISS_DISTANCE_THRESHOLD_KM = 10;  
+const ORBIT_FILTER_TOLERANCE_KM = 100; 
 
 const log = (message) => console.log(`[${new Date().toISOString()}] ${message}`);
 
@@ -16,16 +16,15 @@ async function runAnalysis(scc_number) {
     const debrisDb = await openDebrisDbForScript();
 
     try {
-        // 1. Fetch our custom satellite
-        const primaryAssetRecord = await debrisDb.get('SELECT * FROM satellites WHERE scc_number = ? AND is_custom = 1', [scc_number]);
+        
+        const primaryAssetRecord = await debrisDb.get('SELECT * FROM satellites WHERE scc_number = ? ', [scc_number]);
         if (!primaryAssetRecord) throw new Error(`Custom satellite SCC #${scc_number} not found in debris.db.`);
         
         const primaryAsset = new Satellite(primaryAssetRecord);
         log(`Primary asset: ${primaryAsset.name} (#${primaryAssetRecord.scc_number})`);
         log(`  -> Orbit: ${primaryAsset.perigee.toFixed(2)}km x ${primaryAsset.apogee.toFixed(2)}km`);
 
-        // --- OPTIMIZATION #1: ORBITAL FILTERING ---
-        // Fetch only candidates whose orbits physically overlap with our primary asset's orbit.
+        
         log('Filtering catalog for satellites with overlapping orbits...');
         const perigeeWithTolerance = primaryAsset.perigee - ORBIT_FILTER_TOLERANCE_KM;
         const apogeeWithTolerance = primaryAsset.apogee + ORBIT_FILTER_TOLERANCE_KM;
@@ -39,7 +38,7 @@ async function runAnalysis(scc_number) {
         );
         log(`Found ${candidates.length} potential candidates after filtering (down from the full catalog). This will be much faster.`);
         
-        // 3. Prepare to insert any findings into the main conjunctions table
+        
         const conjunctionInsertStmt = await primaryDb.prepare(
             `INSERT OR IGNORE INTO conjunctions (primary_scc, secondary_scc, primary_name, secondary_name, tca, miss_distance_km, relative_speed_km_s, created_at)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -50,7 +49,7 @@ async function runAnalysis(scc_number) {
         let checkedCount = 0;
 
         for (const candidate of candidates) {
-            // --- OPTIMIZATION #4: PROGRESS FEEDBACK ---
+            
             checkedCount++;
             if (checkedCount % 100 === 0) {
                 log(`  ... checked ${checkedCount} of ${candidates.length} candidates.`);
@@ -94,7 +93,7 @@ async function runAnalysis(scc_number) {
                     );
                     conjunctionsFound++;
                 }
-            } catch(e) { /* Skip bad TLEs */ }
+            } catch(e) {  }
         }
         await conjunctionInsertStmt.finalize();
         log(`Local analysis complete. Added ${conjunctionsFound} potential conjunctions for satellite #${scc_number}.`);
@@ -105,7 +104,7 @@ async function runAnalysis(scc_number) {
     }
 }
 
-// --- CLI ---
+
 const scc_arg = process.argv[2];
 if (!scc_arg || isNaN(parseInt(scc_arg, 10))) {
     console.error("Usage: node src/services/analyzeCustomSatellite.js <scc_number>");
