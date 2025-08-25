@@ -1,7 +1,7 @@
 import { Satellite, Vector3D } from 'ootk';
 import { openPrimaryDbForScript, openDebrisDbForScript } from './dataManager.js';
 
-
+// parameters for the analysis
 const PREDICTION_WINDOW_HOURS = 24;     
 const PROPAGATION_STEP_S = 180;          
 const MISS_DISTANCE_THRESHOLD_KM = 10;  
