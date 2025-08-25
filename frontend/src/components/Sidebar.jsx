@@ -22,6 +22,7 @@ import {
   startManeuverPlanning,
   selectAnalysis,
 } from '../store/analysisSlice';
+import { clearLastPlan } from '../store/analysisSlice';
 
 // --- STYLES ---
 
@@ -109,8 +110,11 @@ function Sidebar({ isOpen, onClose }) {
     loading,
     error,
     planningInProgress,
+    lastPlan,
   } = useSelector(selectAnalysis);
   const [view, setView] = useState('tracked'); // 'tracked' or 'all'
+  const [openEventIds, setOpenEventIds] = useState({});
+  const [openSatIds, setOpenSatIds] = useState({});
 
   useEffect(() => {
     if (isOpen) {
@@ -140,6 +144,14 @@ function Sidebar({ isOpen, onClose }) {
     }
   };
 
+  const toggleEventOpen = (eventId) => {
+    setOpenEventIds(prev => ({ ...prev, [eventId]: !prev[eventId] }));
+  };
+
+  const toggleSatOpen = (noradId) => {
+    setOpenSatIds(prev => ({ ...prev, [noradId]: !prev[noradId] }));
+  };
+
   const renderTrackedRisks = () => {
     if (riskySatellites.length === 0) {
       return (
@@ -150,10 +162,31 @@ function Sidebar({ isOpen, onClose }) {
     }
     return (
       <List sx={{ padding: 0 }}>
-        {riskySatellites.map((sat) =>
-          sat.riskEvents.map((event) => {
+        {riskySatellites.map((sat) => (
+          <div key={sat.noradId}>
+            <ListItem sx={{ paddingX: 0 }}>
+              <ListItemText
+                primary={`${sat.name || 'Satellite'} (#${sat.noradId})`}
+                secondary={`${(sat.riskEvents || []).length} event(s)`}
+                primaryTypographyProps={{ fontWeight: '600', fontSize: '1.0em' }}
+                secondaryTypographyProps={{ color: '#ccc', fontSize: '0.8em' }}
+              />
+              <Box textAlign="right" sx={{ ml: 2 }}>
+                <Button
+                  size="small"
+                  sx={{ p: '2px 8px', fontSize: '0.7rem', minWidth: '110px' }}
+                  onClick={() => toggleSatOpen(sat.noradId)}
+                >
+                  {openSatIds[sat.noradId] ? 'Hide Planned Data' : 'Show Planned Data'}
+                </Button>
+              </Box>
+            </ListItem>
+            <Divider sx={{ backgroundColor: 'rgba(255, 255, 255, 0.15)' }} />
+
+            {openSatIds[sat.noradId] && (sat.riskEvents || []).map((event) => {
             const isPlanning = planningInProgress[sat.noradId];
             const hasPlan = event.required_burn_dv_mps != null;
+            const isZeroBurn = hasPlan && Math.abs(Number(event.required_burn_dv_mps)) < 1e-3;
 
             return (
               <div key={event.id}>
@@ -181,22 +214,48 @@ function Sidebar({ isOpen, onClose }) {
                     </Typography>
 
                     {hasPlan ? (
-                      <Tooltip
-                        title={`New Orbit: ${event.new_perigee_km?.toFixed(
-                          1
-                        )} x ${event.new_apogee_km?.toFixed(1)} km`}
-                      >
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            color: '#64ffda',
-                            fontWeight: 'bold',
-                            mt: 0.5,
-                          }}
-                        >
-                          Burn: {event.required_burn_dv_mps.toFixed(2)} m/s
-                        </Typography>
-                      </Tooltip>
+                      <>
+                        {event.new_perigee_km != null && event.new_apogee_km != null && (
+                          <>
+                            <Button
+                              size="small"
+                              sx={{ mt: 0.5, p: '2px 8px', fontSize: '0.7rem', minWidth: '100px' }}
+                              onClick={() => toggleEventOpen(event.id)}
+                            >
+                              {openEventIds[event.id] ? 'Hide Orbit' : 'Show Orbit'}
+                            </Button>
+                            {openEventIds[event.id] && (
+                              <Typography variant="caption" sx={{ color: '#ccc', display: 'block' }}>
+                                Orbit: {event.new_perigee_km.toFixed(1)} x {event.new_apogee_km.toFixed(1)} km
+                              </Typography>
+                            )}
+                          </>
+                        )}
+                        {isZeroBurn ? (
+                          <Typography variant="body2" sx={{ color: '#9be7ff', fontWeight: 'bold', mt: 0.5 }}>
+                            Avoidance not needed (Δv 0.00 m/s)
+                          </Typography>
+                        ) : (
+                          <Tooltip
+                            title={
+                              event.new_perigee_km != null && event.new_apogee_km != null
+                                ? `New Orbit: ${event.new_perigee_km.toFixed(1)} x ${event.new_apogee_km.toFixed(1)} km`
+                                : ''
+                            }
+                          >
+                            <Typography
+                              variant="body2"
+                              sx={{
+                                color: '#64ffda',
+                                fontWeight: 'bold',
+                                mt: 0.5,
+                              }}
+                            >
+                              Burn: {event.required_burn_dv_mps.toFixed(2)} m/s
+                            </Typography>
+                          </Tooltip>
+                        )}
+                      </>
                     ) : (
                       <Button
                         size="small"
@@ -226,8 +285,9 @@ function Sidebar({ isOpen, onClose }) {
                 />
               </div>
             );
-          })
-        )}
+            })}
+          </div>
+        ))}
       </List>
     );
   };
@@ -289,9 +349,38 @@ function Sidebar({ isOpen, onClose }) {
       );
     }
 
-    return view === 'tracked'
-      ? renderTrackedRisks()
-      : renderAllSocratesRisks();
+    return (
+      <>
+        {lastPlan?.results?.length > 0 && (
+          <Box sx={{ mb: 2, p: 2, border: '1px solid rgba(255,255,255,0.2)', borderRadius: 1 }}>
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Typography sx={{ fontWeight: 600 }}>Latest Plan</Typography>
+              <Button size="small" onClick={() => dispatch(clearLastPlan())} sx={{ color: '#ccc' }}>
+                Dismiss
+              </Button>
+            </Box>
+            {lastPlan.summary && (
+              <Typography variant="caption" sx={{ color: '#ccc', display: 'block', mt: 1 }}>
+                {`Planned ${lastPlan.summary.plannedManeuvers} maneuvers, total Δv ${lastPlan.summary.totalDeltaV.toFixed(2)} m/s`}
+              </Typography>
+            )}
+            <List sx={{ mt: 1, p: 0 }}>
+              {lastPlan.results.map((r) => (
+                <ListItem key={r.id} sx={{ p: 0 }}>
+                  <ListItemText
+                    primary={`${r.primary_name} ↔ ${r.secondary_name}`}
+                    secondary={`Δv: ${r.required_burn_dv_mps?.toFixed(2) ?? 'N/A'} m/s · Orbit: ${r.new_perigee_km?.toFixed(1) ?? '-'} x ${r.new_apogee_km?.toFixed(1) ?? '-'} km`}
+                    primaryTypographyProps={{ fontWeight: '500', fontSize: '0.9em' }}
+                    secondaryTypographyProps={{ color: '#ccc', fontSize: '0.8em' }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        )}
+        {view === 'tracked' ? renderTrackedRisks() : renderAllSocratesRisks()}
+      </>
+    );
   };
 
   return (

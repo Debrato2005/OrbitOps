@@ -42,7 +42,7 @@ export const startManeuverPlanning = createAsyncThunk(
         }, 5000);
       }
 
-      return { scc_number, status: data.status };
+      return { scc_number, status: data.status, results: data.results || [] };
     } catch (error) {
       notificationManager.error(error.message, { title: 'Planning Failed' });
       return rejectWithValue(error.message);
@@ -69,12 +69,17 @@ const initialState = {
   loading: false,
   error: null,
   planningInProgress: {},
+  lastPlan: { status: null, message: null, summary: null, results: [] },
 };
 
 const analysisSlice = createSlice({
   name: 'analysis',
   initialState,
-  reducers: {},
+  reducers: {
+    clearLastPlan(state) {
+      state.lastPlan = { status: null, message: null, summary: null, results: [] };
+    },
+  },
   extraReducers: (builder) => {
     builder
       .addCase(fetchTrackedRisks.pending, (state) => {
@@ -100,6 +105,32 @@ const analysisSlice = createSlice({
       })
       .addCase(startManeuverPlanning.fulfilled, (state, action) => {
         state.planningInProgress[action.meta.arg] = false;
+        // Merge immediate results, if any
+        const results = action.payload?.results || [];
+        if (results.length > 0) {
+          const resultById = new Map(results.map(r => [r.id, r]));
+          state.riskySatellites = state.riskySatellites.map(sat => ({
+            ...sat,
+            riskEvents: (sat.riskEvents || []).map(evt => {
+              const upd = resultById.get(evt.id);
+              return upd
+                ? {
+                    ...evt,
+                    required_burn_dv_mps: upd.required_burn_dv_mps,
+                    new_apogee_km: upd.new_apogee_km,
+                    new_perigee_km: upd.new_perigee_km,
+                  }
+                : evt;
+            }),
+          }));
+        }
+        // Store last plan response for immediate display
+        state.lastPlan = {
+          status: action.payload?.status || null,
+          message: action.payload?.status === 'completed' ? 'Maneuver planning completed' : 'Maneuver planning initiated',
+          summary: action.payload?.summary || null,
+          results,
+        };
         // If the planning was completed, we don't need to show the planning state anymore
         if (action.payload.status === 'completed') {
           delete state.planningInProgress[action.meta.arg];
@@ -127,3 +158,4 @@ const analysisSlice = createSlice({
 
 export const selectAnalysis = (state) => state.analysis;
 export default analysisSlice.reducer;
+export const { clearLastPlan } = analysisSlice.actions;
