@@ -1,6 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import satelliteService from "../services/satelliteService";
-// CORRECTED: The imported function name now matches the export in analysisSlice.js
 import { fetchTrackedRisks } from "./analysisSlice"; 
 
 export const fetchSatellites = createAsyncThunk(
@@ -20,14 +19,8 @@ export const addSatellite = createAsyncThunk(
     try {
       const newCompanyData = await satelliteService.addSatellite(satelliteData);
       
-      // --- NEW LOGIC ---
-      // After the satellite is successfully added and the state is about to be updated,
-      // dispatch the action to refresh the tracked conjunctions list.
-      // This ensures the sidebar will have the latest data next time it's opened.
       console.log('[Frontend] New satellite added. Triggering refresh of tracked risks.');
-      // CORRECTED: The dispatched action name is now correct.
       dispatch(fetchTrackedRisks());
-      // --- END OF NEW LOGIC ---
 
       return newCompanyData.trackedSatellites;
     } catch (error) {

@@ -36,7 +36,7 @@ async function runAnalysis(scc_number) {
              perigee_km <= ?`,
             [scc_number, perigeeWithTolerance, apogeeWithTolerance]
         );
-        log(`Found ${candidates.length} potential candidates after filtering (down from the full catalog). This will be much faster.`);
+        log(`Found ${candidates.length} potential candidates after filtering (down from the full catalog).`);
         
         
         const conjunctionInsertStmt = await primaryDb.prepare(

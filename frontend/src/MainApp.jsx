@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import Header from './components/Header';
 import GlobeCanvas from './components/GlobeCanvas';
 import ControlDock from './components/ControlDock';
 import ImportSatelliteDialog from './components/ImportSatelliteDialog';
-import { fetchSatellites } from './store/satelliteSlice';
+import { fetchSatellites, selectSatellites } from './store/satelliteSlice';
 import Sidebar from './components/Sidebar';
+import SatelliteInfoBox from './components/SatelliteInfoBox';
 
 const appContainerStyles = {
   display: 'flex',
@@ -35,9 +36,16 @@ function MainApp() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [selectedSatellite, setSelectedSatellite] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [time, setTime] = useState(new Date());
+
+  const allSatellites = useSelector(selectSatellites);
 
   useEffect(() => {
     dispatch(fetchSatellites());
+
+    const interval = setInterval(() => {
+      setTime(new Date());
+    }, 1500);
 
     document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
@@ -46,13 +54,19 @@ function MainApp() {
     document.getElementById('root').style.height = '100%';
 
     return () => {
+      clearInterval(interval);
       document.documentElement.style.overflow = 'auto';
       document.body.style.overflow = 'auto';
     };
   }, [dispatch]);
 
   const handleSatelliteSelect = (satellite) => {
-    setSelectedSatellite(prev => (prev && prev.noradId === satellite.noradId ? null : satellite));
+    const fullSatelliteData = allSatellites.find(s => s.noradId === satellite.noradId);
+    setSelectedSatellite(prev => (prev && prev.noradId === satellite.noradId ? null : fullSatelliteData));
+  };
+
+  const handleClearSelection = () => {
+    setSelectedSatellite(null);
   };
 
   return (
@@ -60,7 +74,13 @@ function MainApp() {
       <Header />
       <div style={mainContentStyles}>
         <div style={globeWrapperStyles}>
+          <SatelliteInfoBox
+            satellite={selectedSatellite}
+            time={time}
+            onClear={handleClearSelection}
+          />
           <GlobeCanvas
+            time={time}
             isRotationEnabled={isRotationEnabled}
             selectedSatellite={selectedSatellite}
             onSatelliteClick={handleSatelliteSelect}

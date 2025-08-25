@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useLayoutEffect, useMemo } from 'react';
+import { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { useSelector } from 'react-redux';
 import Globe from 'react-globe.gl';
 import * as satellite from 'satellite.js';
@@ -6,7 +6,6 @@ import * as THREE from 'three';
 import { selectSatellites } from '../store/satelliteSlice';
 
 const EARTH_RADIUS_KM = 6371;
-const TIME_STEP = 1500;
 
 const globeContainerStyles = {
   flexGrow: 1,
@@ -15,11 +14,10 @@ const globeContainerStyles = {
   height: '100%',
 };
 
-function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick }) {
+function GlobeCanvas({ time, isRotationEnabled, selectedSatellite, onSatelliteClick }) {
   const globeEl = useRef();
   const globeContainerRef = useRef(null);
   const [globeSize, setGlobeSize] = useState({ width: 0, height: 0 });
-  const [time, setTime] = useState(new Date());
 
   const allSatellites = useSelector(selectSatellites);
 
@@ -35,13 +33,6 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
     window.addEventListener('resize', updateSize);
     updateSize();
     return () => window.removeEventListener('resize', updateSize);
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTime(new Date());
-    }, TIME_STEP);
-    return () => clearInterval(interval);
   }, []);
 
   const satData = useMemo(() => {
@@ -76,38 +67,44 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
   }, [time, allSatellites]);
 
   const orbitData = useMemo(() => {
-    if (!selectedSatellite || !selectedSatellite.satrec) return [];
+    if (!selectedSatellite || !selectedSatellite.tleLine1 || !selectedSatellite.tleLine2) return [];
 
-    const satrec = selectedSatellite.satrec;
-    const period = (2 * Math.PI) / satrec.no;
-    const points = [];
-    const now = new Date();
+    try {
+      const satrec = satellite.twoline2satrec(selectedSatellite.tleLine1, selectedSatellite.tleLine2);
+      const period = (2 * Math.PI) / satrec.no;
+      const points = [];
+      const now = new Date();
 
-    for (let i = 0; i <= period; i += 0.25) {
-      const currentTime = new Date(now.getTime() + i * 60 * 1000);
-      const gmst = satellite.gstime(currentTime);
-      const eci = satellite.propagate(satrec, currentTime);
-      if (eci.position) {
-        const geodetic = satellite.eciToGeodetic(eci.position, gmst);
-        points.push({
-          lat: satellite.radiansToDegrees(geodetic.latitude),
-          lng: satellite.radiansToDegrees(geodetic.longitude),
-          alt: geodetic.height / EARTH_RADIUS_KM,
-        });
+      for (let i = 0; i <= period; i += 0.25) {
+        const currentTime = new Date(now.getTime() + i * 60 * 1000);
+        const gmst = satellite.gstime(currentTime);
+        const eci = satellite.propagate(satrec, currentTime);
+        if (eci.position) {
+          const geodetic = satellite.eciToGeodetic(eci.position, gmst);
+          points.push({
+            lat: satellite.radiansToDegrees(geodetic.latitude),
+            lng: satellite.radiansToDegrees(geodetic.longitude),
+            alt: geodetic.height / EARTH_RADIUS_KM,
+          });
+        }
       }
-    }
 
-    if (points.length > 0) {
-      points.push(points[0]);
-    }
+      if (points.length > 0) {
+        points.push(points[0]);
+      }
 
-    return [{
-      ...selectedSatellite,
-      points,
-      color: 'orangered',
-      stroke: 1.5
-    }];
+      return [{
+        ...selectedSatellite,
+        points,
+        color: 'orangered',
+        stroke: 1.5
+      }];
+    } catch (error) {
+      console.warn('Error calculating orbit for selected satellite:', selectedSatellite.name, error);
+      return [];
+    }
   }, [selectedSatellite]);
+
 
   const altitudeLineData = useMemo(() => {
     if (!selectedSatellite || !satData.length) return [];
@@ -207,7 +204,7 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
             // Glow effect
             const glowGeometry = new THREE.SphereGeometry(1.5);
             const glowMaterial = new THREE.MeshBasicMaterial({
-              ccolor: isSelected ? 0xff3333 : 0xff4d4d,
+              color: isSelected ? 0xff3333 : 0xff4d4d,
               transparent: true,
               opacity: 0.1
             });
