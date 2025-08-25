@@ -198,7 +198,7 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
 
             const dotGeometry = new THREE.SphereGeometry(1);
             const dotMaterial = new THREE.MeshBasicMaterial({
-              color: isSelected ? 0xff0000 : 0x8b0000,
+              color: isSelected ? 0xff3333 : 0xff4d4d,
               transparent: true,
               opacity: 1
             });
@@ -207,7 +207,7 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
             // Glow effect
             const glowGeometry = new THREE.SphereGeometry(1.5);
             const glowMaterial = new THREE.MeshBasicMaterial({
-              color: isSelected ? 0xff0000 : 0x8b0000,
+              ccolor: isSelected ? 0xff3333 : 0xff4d4d,
               transparent: true,
               opacity: 0.1
             });
