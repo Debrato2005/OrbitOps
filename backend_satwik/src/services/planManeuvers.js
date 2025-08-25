@@ -1,5 +1,4 @@
-// src/services/planManeuvers.js
-// --- FINAL CORRECTED VERSION using a Linear Model ---
+
 import { Satellite, Vector3D } from 'ootk';
 import { openPrimaryDbForScript, openDebrisDbForScript } from './dataManager.js';
 
@@ -12,7 +11,6 @@ const MU_EARTH = 398600.4418;
 
 const log = (msg) => console.log(`[${new Date().toISOString()}] ${msg}`);
 
-// --- Helper functions are unchanged ---
 function norm(v) { return Math.sqrt(v.x*v.x + v.y*v.y + v.z*v.z); }
 function add(v1, v2) { return new Vector3D(v1.x+v2.x, v1.y+v2.y, v1.z+v2.z); }
 function sub(v1, v2) { return new Vector3D(v1.x-v2.x, v1.y-v2.y, v1.z-v2.z); }
@@ -21,9 +19,9 @@ function normalize(v) { const n = norm(v); return n === 0 ? new Vector3D(0,0,0) 
 function rvToElements(r, v) { const rVec = [r.x, r.y, r.z]; const vVec = [v.x, v.y, v.z]; const rMag = Math.hypot(...rVec); const vMag = Math.hypot(...vVec); const h = [rVec[1]*vVec[2]-rVec[2]*vVec[1], rVec[2]*vVec[0]-rVec[0]*vVec[2], rVec[0]*vVec[1]-rVec[1]*vVec[0]]; const rDotV = rVec[0]*vVec[0]+rVec[1]*vVec[1]+rVec[2]*vVec[2]; const eVec = [((vMag*vMag - MU_EARTH/rMag)*rVec[0] - rDotV*vVec[0])/MU_EARTH, ((vMag*vMag - MU_EARTH/rMag)*rVec[1] - rDotV*vVec[1])/MU_EARTH, ((vMag*vMag - MU_EARTH/rMag)*rVec[2] - rDotV*vVec[2])/MU_EARTH]; const e = Math.hypot(...eVec); const energy = vMag*vMag/2 - MU_EARTH/rMag; const a = -MU_EARTH/(2*energy); return { a, e, perigee: a*(1-e), apogee: a*(1+e) }; }
 
 
-// --- Calculation function rewritten for a robust Linear Model ---
+
 async function findMinimalBurn(primaryAsset, secondaryAsset, burnTime, tca, targetSeparationKm) {
-    // 1. Get positions of BOTH satellites at TCA without any maneuver.
+    
     const primaryStateAtTca = primaryAsset.eci(tca);
     const secondaryStateAtTca = secondaryAsset.eci(tca);
     if (!primaryStateAtTca?.position || !secondaryStateAtTca?.position) {
@@ -33,7 +31,7 @@ async function findMinimalBurn(primaryAsset, secondaryAsset, burnTime, tca, targ
     const primaryPosAtTca = new Vector3D(primaryStateAtTca.position.x, primaryStateAtTca.position.y, primaryStateAtTca.position.z);
     const secondaryPosAtTca = new Vector3D(secondaryStateAtTca.position.x, secondaryStateAtTca.position.y, secondaryStateAtTca.position.z);
 
-    // 2. Get the primary asset's velocity at the time of the burn.
+  
     const primaryStateAtBurn = primaryAsset.eci(burnTime);
     if (!primaryStateAtBurn?.velocity) {
         log(`[ERROR] Could not propagate primary asset to burn time.`);
@@ -43,7 +41,6 @@ async function findMinimalBurn(primaryAsset, secondaryAsset, burnTime, tca, targ
     const burnDirection = normalize(primaryVelAtBurn); // Maneuvers are most efficient along the velocity vector.
     const dtSeconds = (tca.getTime() - burnTime.getTime()) / 1000;
 
-    // 3. This function now uses a linear model to find the new separation.
     const separation = (dv_mps) => {
         const dv_kps = dv_mps / 1000; // Convert to km/s
         const deltaV_vector = scale(burnDirection, dv_kps); // The change in velocity
@@ -66,7 +63,7 @@ async function findMinimalBurn(primaryAsset, secondaryAsset, burnTime, tca, targ
 }
 
 
-// --- Main Planner ---
+// Main Planner 
 export async function planManeuvers(scc_number) {
     const primaryDb = await openPrimaryDbForScript();
     const debrisDb = await openDebrisDbForScript();
@@ -103,7 +100,7 @@ export async function planManeuvers(scc_number) {
             
             finalBurn = await findMinimalBurn(primaryAsset, secondaryAsset, burnTime, tca, SAFE_MISS_DISTANCE_KM);
 
-            // Always compute apogee/perigee at burn time (even if no burn is needed or no solution)
+            // Always compute apogee/perigee at burn time
             const preBurnState = primaryAsset.eci(burnTime);
             if (preBurnState) {
                 const v = new Vector3D(preBurnState.velocity.x, preBurnState.velocity.y, preBurnState.velocity.z);
@@ -142,7 +139,7 @@ export async function planManeuvers(scc_number) {
     log('Maneuver planning complete.');
 }
 
-// --- CLI ---
+// CLI for testing 
 if (process.argv[1].endsWith('planManeuvers.js')) {
     const scc = parseInt(process.argv[2]);
     if (!scc) { console.error("Usage: node planManeuvers.js <scc_number>"); process.exit(1); }
