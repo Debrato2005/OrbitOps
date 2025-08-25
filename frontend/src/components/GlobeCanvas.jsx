@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { selectSatellites } from '../store/satelliteSlice';
 
 const EARTH_RADIUS_KM = 6371;
-const TIME_STEP = 1000;
+const TIME_STEP = 1500;
 
 const globeContainerStyles = {
   flexGrow: 1,
@@ -128,13 +128,14 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
   }, [selectedSatellite, satData]);
 
   const labelsData = useMemo(() => {
-    return satData.map(sat => ({
-      ...sat,
+    return allSatellites.map(sat => ({
+      noradId: sat.noradId,
+      name: sat.name,
       text: sat.name,
       color: selectedSatellite && sat.noradId === selectedSatellite.noradId ? '#ff4500' : '#ffffff',
-      size: 1.0,
+      size: 0.25
     }));
-  }, [satData, selectedSatellite]);
+  }, [allSatellites, selectedSatellite]);
 
   useEffect(() => {
     const globe = globeEl.current;
@@ -184,7 +185,7 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
           width={globeSize.width}
           height={globeSize.height}
           globeImageUrl="/earth-blue-marble.jpg"
-          bumpImageUrl="//cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png"
+          bumpImageUrl="/earth-topology.png"
           backgroundImageUrl="/night-sky.jpg"
           onGlobeReady={addCloudsOnReady}
           objectsData={satData}
@@ -194,20 +195,24 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
           objectThreeObject={sat => {
             const isSelected = selectedSatellite && sat.noradId === selectedSatellite.noradId;
             const group = new THREE.Group();
+
             const dotGeometry = new THREE.SphereGeometry(1);
             const dotMaterial = new THREE.MeshBasicMaterial({
-              color: isSelected ? 0xff4500 : 0xff6b6b,
+              color: isSelected ? 0xff0000 : 0x8b0000,
               transparent: true,
               opacity: 1
             });
             const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+
+            // Glow effect
             const glowGeometry = new THREE.SphereGeometry(1.5);
             const glowMaterial = new THREE.MeshBasicMaterial({
-              color: isSelected ? 0xff4500 : 0xff6b6b,
+              color: isSelected ? 0xff0000 : 0x8b0000,
               transparent: true,
               opacity: 0.1
             });
             const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+
             group.add(dot);
             group.add(glow);
             group.userData = sat;
@@ -215,9 +220,18 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
           }}
           onObjectClick={handleSatelliteClick}
           labelsData={labelsData}
-          labelLat="lat"
-          labelLng="lng"
-          labelAltitude="alt"
+          labelLat={d => {
+            const currentSat = satData.find(s => s.noradId === d.noradId);
+            return currentSat ? currentSat.lat - 1 : 0; // ✨ move below the satellite
+          }}
+          labelLng={d => {
+            const currentSat = satData.find(s => s.noradId === d.noradId);
+            return currentSat ? currentSat.lng : 0;
+          }}
+          labelAltitude={d => {
+            const currentSat = satData.find(s => s.noradId === d.noradId);
+            return currentSat ? currentSat.alt : 0;
+          }}
           labelText="text"
           labelColor="color"
           labelSize="size"
