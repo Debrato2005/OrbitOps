@@ -172,6 +172,26 @@ router.get("/satellites/with-risk-analysis", requireAuth, async (req, res) => {
             };
         });
 
+        // 4. Persist risk data into Company schema (riskData field)
+        try {
+            let modified = false;
+            company.trackedSatellites.forEach(satDoc => {
+                const noradId = satDoc.noradId;
+                const risks = riskMap.get(noradId) || [];
+                const newRiskData = { updatedAt: new Date().toISOString(), events: risks };
+                // Only update if changed to avoid unnecessary writes
+                if (JSON.stringify(satDoc.riskData) !== JSON.stringify(newRiskData)) {
+                    satDoc.riskData = newRiskData;
+                    modified = true;
+                }
+            });
+            if (modified) {
+                await company.save();
+            }
+        } catch (persistErr) {
+            console.warn('Warning: Failed to persist riskData to Company schema:', persistErr.message);
+        }
+
         res.json(trackedSatellitesWithRisk);
 
     } catch (error) {

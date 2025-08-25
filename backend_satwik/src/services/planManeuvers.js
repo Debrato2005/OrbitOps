@@ -102,22 +102,35 @@ export async function planManeuvers(scc_number) {
             const burnTime = new Date(tca.getTime() + MANEUVER_TIME_OFFSET_MIN * 60000);
             
             finalBurn = await findMinimalBurn(primaryAsset, secondaryAsset, burnTime, tca, SAFE_MISS_DISTANCE_KM);
-            
-            if (finalBurn !== null) {
-                // To calculate the new orbit, we simulate the final state at the burn time
-                const preBurnState = primaryAsset.eci(burnTime);
-                if (preBurnState) {
-                    const v = new Vector3D(preBurnState.velocity.x, preBurnState.velocity.y, preBurnState.velocity.z);
-                    const postBurnVelocity = add(v, scale(normalize(v), finalBurn / 1000));
-                    const elems = rvToElements(preBurnState.position, postBurnVelocity);
-                    newApogee = elems.apogee;
-                    newPerigee = elems.perigee;
-                    log(`    -> Solution Found: Δv=${finalBurn.toFixed(3)} m/s, new orbit ${newPerigee.toFixed(1)} x ${newApogee.toFixed(1)} km`);
+
+            // Always compute apogee/perigee at burn time (even if no burn is needed or no solution)
+            const preBurnState = primaryAsset.eci(burnTime);
+            if (preBurnState) {
+                const v = new Vector3D(preBurnState.velocity.x, preBurnState.velocity.y, preBurnState.velocity.z);
+                const unitV = normalize(v);
+                const postBurnVelocity = finalBurn !== null ? add(v, scale(unitV, finalBurn / 1000)) : v;
+                const elems = rvToElements(preBurnState.position, postBurnVelocity);
+                newApogee = elems.apogee;
+                newPerigee = elems.perigee;
+                if (finalBurn !== null) {
+                    if (finalBurn === 0) {
+                        log(`    -> Δv=0.000 m/s. Avoidance not needed. Orbit remains ${newPerigee.toFixed(1)} x ${newApogee.toFixed(1)} km`);
+                    } else {
+                        log(`    -> Solution Found: Δv=${finalBurn.toFixed(3)} m/s, new orbit ${newPerigee.toFixed(1)} x ${newApogee.toFixed(1)} km`);
+                    }
                 } else {
-                    log(`    -> Solution Found but could not calculate new orbit.`);
+                    log(`    -> Solution NOT Found. Reporting current orbit ${newPerigee.toFixed(1)} x ${newApogee.toFixed(1)} km`);
                 }
             } else {
-                 log(`    -> Solution NOT Found.`);
+                if (finalBurn !== null) {
+                    if (finalBurn === 0) {
+                        log(`    -> Δv=0.000 m/s. Avoidance not needed. (Could not compute orbit elements)`);
+                    } else {
+                        log(`    -> Solution Found but could not calculate new orbit.`);
+                    }
+                } else {
+                    log(`    -> Solution NOT Found and could not compute orbit elements.`);
+                }
             }
         }
         await updateStmt.run([finalBurn, newApogee, newPerigee, conj.id]);

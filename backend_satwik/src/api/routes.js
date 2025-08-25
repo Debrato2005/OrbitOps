@@ -298,7 +298,7 @@ router.post('/plan/:scc_number', async (req, res) => {
         const { openPrimaryDbForScript } = await import('../services/dataManager.js');
         const db = await openPrimaryDbForScript();
         const updatedConjunctions = await db.all(
-            'SELECT * FROM conjunctions WHERE (primary_scc = ? OR secondary_scc = ?) AND required_burn_dv_mps IS NOT NULL', 
+            'SELECT id, primary_scc, secondary_scc, primary_name, secondary_name, tca, miss_distance_km, max_prob, required_burn_dv_mps, new_apogee_km, new_perigee_km FROM conjunctions WHERE (primary_scc = ? OR secondary_scc = ?)',
             [scc_number, scc_number]
         );
         await db.close();
@@ -314,7 +314,20 @@ router.post('/plan/:scc_number', async (req, res) => {
                 plannedManeuvers: plannedCount,
                 totalDeltaV: totalDeltaV,
                 satelliteId: scc_number
-            }
+            },
+            results: updatedConjunctions.map(c => ({
+                id: c.id,
+                primary_scc: c.primary_scc,
+                secondary_scc: c.secondary_scc,
+                primary_name: c.primary_name,
+                secondary_name: c.secondary_name,
+                tca: c.tca,
+                miss_distance_km: c.miss_distance_km,
+                max_prob: c.max_prob,
+                required_burn_dv_mps: c.required_burn_dv_mps,
+                new_apogee_km: c.new_apogee_km,
+                new_perigee_km: c.new_perigee_km
+            }))
         });
     } catch (error) {
         log(`[ERROR] Maneuver planning failed for satellite #${scc_number}: ${error.message}`);
