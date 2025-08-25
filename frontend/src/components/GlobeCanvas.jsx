@@ -55,7 +55,6 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
         try {
           const satrec = satellite.twoline2satrec(sat.tleLine1, sat.tleLine2);
           const eci = satellite.propagate(satrec, time);
-
           if (eci.position) {
             const geodetic = satellite.eciToGeodetic(eci.position, gmst);
             return {
@@ -63,8 +62,8 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
               satrec,
               lat: satellite.radiansToDegrees(geodetic.latitude),
               lng: satellite.radiansToDegrees(geodetic.longitude),
-              alt: geodetic.height / EARTH_RADIUS_KM, // This is the key - altitude as ratio to Earth radius
-              altKm: geodetic.height, // Keep the actual altitude in km for display
+              alt: geodetic.height / EARTH_RADIUS_KM,
+              altKm: geodetic.height,
             };
           }
           return null;
@@ -117,8 +116,8 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
     if (!currentSat) return [];
 
     const points = [
-      { lat: currentSat.lat, lng: currentSat.lng, alt: currentSat.alt }, // Satellite position
-      { lat: currentSat.lat, lng: currentSat.lng, alt: 0 } // Earth surface
+      { lat: currentSat.lat, lng: currentSat.lng, alt: currentSat.alt },
+      { lat: currentSat.lat, lng: currentSat.lng, alt: 0 }
     ];
 
     return [{
@@ -128,13 +127,12 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
     }];
   }, [selectedSatellite, satData]);
 
-  // Labels data for satellite names (positioned at actual altitude)
   const labelsData = useMemo(() => {
     return satData.map(sat => ({
       ...sat,
       text: sat.name,
       color: selectedSatellite && sat.noradId === selectedSatellite.noradId ? '#ff4500' : '#ffffff',
-      size: 1.0, // Constant size for all satellites
+      size: 1.0,
     }));
   }, [satData, selectedSatellite]);
 
@@ -147,7 +145,6 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
     }
   }, [isRotationEnabled]);
 
-  // Handle satellite click
   const handleSatelliteClick = (satellite, event) => {
     console.log('Satellite clicked:', satellite.name);
     if (onSatelliteClick && typeof onSatelliteClick === 'function') {
@@ -190,47 +187,33 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
           bumpImageUrl="//cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png"
           backgroundImageUrl="/night-sky.jpg"
           onGlobeReady={addCloudsOnReady}
-
-          // Use 3D objects for satellites at proper altitude
           objectsData={satData}
           objectLat="lat"
           objectLng="lng"
           objectAltitude="alt"
           objectThreeObject={sat => {
             const isSelected = selectedSatellite && sat.noradId === selectedSatellite.noradId;
-            
-            // Create a group to hold both the dot and label
             const group = new THREE.Group();
-            
-            // Create the satellite dot - increased size
-            const dotGeometry = new THREE.SphereGeometry(1.5); // Increased from 0.5 to 1.5
+            const dotGeometry = new THREE.SphereGeometry(1);
             const dotMaterial = new THREE.MeshBasicMaterial({
               color: isSelected ? 0xff4500 : 0xff6b6b,
               transparent: true,
-              opacity: 0.9
+              opacity: 1
             });
             const dot = new THREE.Mesh(dotGeometry, dotMaterial);
-            
-            // Add glow effect - increased size proportionally
-            const glowGeometry = new THREE.SphereGeometry(2.2); // Increased from 0.8 to 2.2
+            const glowGeometry = new THREE.SphereGeometry(1.5);
             const glowMaterial = new THREE.MeshBasicMaterial({
               color: isSelected ? 0xff4500 : 0xff6b6b,
               transparent: true,
-              opacity: 0.2 // Reduced opacity for larger glow
+              opacity: 0.1
             });
             const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-            
             group.add(dot);
             group.add(glow);
-            
-            // Store satellite data for click handling
             group.userData = sat;
-            
             return group;
           }}
           onObjectClick={handleSatelliteClick}
-
-          // Add labels for satellite names
           labelsData={labelsData}
           labelLat="lat"
           labelLng="lng"
@@ -240,8 +223,6 @@ function GlobeCanvas({ isRotationEnabled, selectedSatellite, onSatelliteClick })
           labelSize="size"
           labelResolution={2}
           labelIncludeDot={false}
-
-          // Paths for orbits and altitude lines
           pathsData={[...orbitData, ...altitudeLineData]}
           pathPoints="points"
           pathPointLat="lat"
