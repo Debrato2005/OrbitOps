@@ -1,6 +1,6 @@
 # OrbitOps
-## To use it first got clone it to your local system
-## Then open it using cli terminal/vs code terminal
-##ccd to backend and npm install them npm run dev
-## then same at backend_satwik and finally at frontend
-## you will then get a localhost link
+### To use it first got clone it to your local system
+### Then open it using cli terminal/vs code terminal
+### cd to backend and npm install them npm run dev
+### then same at backend_satwik and finally at frontend
+### you will then get a localhost link
