@@ -18,7 +18,7 @@ A simple and powerful 3D visualization of satellites orbiting the Earth in real-
 ## Tech Stack
 
 - **Frontend:** React, Vite, react-globe.gl, satellite.js
-- **Backend:** Node.js, Express
+- **Backend:** Node.js, Express, MongoDB, SQL,
 
 ---
 
@@ -29,7 +29,7 @@ Follow these steps to get the project running on your local machine.
 ### 1. Clone the Repository
 
 ```sh
-git clone https://github.com/YOUR_USERNAME/OrbitOps.git
+git clone https://github.com/Debrato2005/OrbitOps
 
 2. Navigate into the Project
 
